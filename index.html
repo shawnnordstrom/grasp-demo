@@ -1,0 +1,636 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Soft Blob 3D</title>
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; color: #aaa; }
+  #app { position: fixed; inset: 0; }
+  #app.placing { cursor: crosshair; }
+
+  /* HUD laid out like render.py's gui.text/gui.rect overlays */
+  #status  { position: fixed; left: 2%; top: 2.2%;  font-size: 15px; color: #AAAAAA; }
+  #probes  { position: fixed; left: 2%; top: 5.6%;  font-size: 15px; color: #66CCFF; }
+  #go { position: fixed; right: 3.5%; top: 3.5%; width: 92px; height: 46px;
+    border: 2px solid #3BE38B; border-radius: 3px; background: transparent;
+    color: #3BE38B; font-size: 25px; font-weight: 600; letter-spacing: .06em;
+    cursor: pointer; display: grid; place-content: center; }
+  #go[disabled] { opacity: .3; cursor: default; }
+  #go:hover:not([disabled]) { background: rgba(59,227,139,.11); }
+
+  #griplabel { position: fixed; left: 2%; bottom: 6.6%; font-size: 15px; color: #3BE38B; }
+  #gripwrap { position: fixed; left: 15%; right: 15%; bottom: 4.2%; height: 22px; }
+  #griptrack { position: absolute; inset: 9px 0 auto 0; height: 4px; background: #444;
+    border-radius: 2px; }
+  #gripfill { position: absolute; inset: 9px auto auto 0; height: 4px; background: #3BE38B;
+    border-radius: 2px; }
+  #griphandle { position: absolute; top: 3px; width: 15px; height: 15px; margin-left: -7px;
+    border-radius: 50%; background: #fff; pointer-events: none; }
+  #grip { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; margin: 0; }
+
+  /* dev controls, deliberately dim so they read as scaffolding not chrome */
+  /* top-left under the probe count, so the bottom stays clear for the grip slider */
+  #dev { position: fixed; left: 12px; top: 9.5%; padding: 9px 11px; width: 194px;
+    background: rgba(12,12,14,.72); border: 1px solid #23232a; border-radius: 7px;
+    font-size: 10.5px; color: #6a6a76; opacity: .62; transition: opacity .15s; }
+  #dev:hover { opacity: 1; }
+  #dev.hidden { display: none; }
+  #dev .r { display: flex; align-items: center; gap: 6px; margin-top: 5px; }
+  #dev .r label { flex: 0 0 52px; }
+  #dev input[type=range] { flex: 1; min-width: 0; height: 3px; accent-color: #777; }
+  #dev .v { font-variant-numeric: tabular-nums; min-width: 44px; text-align: right; }
+  #dev button { background: #1e1e24; color: #9a9aa5; border: 1px solid #33333c;
+    border-radius: 4px; padding: 3px 8px; font: inherit; cursor: pointer; }
+  #dev .hint { margin-top: 7px; color: #4a4a54; }
+  #err { position: fixed; inset: 0; display: none; place-content: center;
+    text-align: center; padding: 40px; color: #e0655f; }
+  #err code { display: block; margin-top: 10px; color: #d8d8dc; background: #1a1a20;
+    padding: 9px 13px; border-radius: 6px; font-size: 12px; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+
+<div id="status">loading…</div>
+<div id="probes"></div>
+<button id="go" disabled>GO</button>
+
+<div id="griplabel">Grip (squeeze): 100%</div>
+<div id="gripwrap">
+  <div id="griptrack"></div><div id="gripfill"></div><div id="griphandle"></div>
+  <input type="range" id="grip" min="0" max="1" step="0.01" value="1">
+</div>
+
+<div id="dev">
+  <div class="r"><button id="play">Pause</button><span class="v" id="frame">0/0</span>
+    <button id="clear">Clear</button></div>
+  <div class="r"><label for="scrub">frame</label><input type="range" id="scrub" min="0" max="0"></div>
+  <div class="r" style="display:none"><label for="speed">speed</label><input type="range" id="speed" min="0.1" max="1" step="0.05">
+    <span class="v" id="speedv"></span></div>
+  <div class="r"><label for="smooth">relax</label><input type="range" id="smooth" min="0" max="6" step="1">
+    <span class="v" id="smoothv"></span></div>
+  <div class="r"><label><input type="checkbox" id="wire"> wire</label>
+    <label><input type="checkbox" id="flat"> flat</label></div>
+  <div class="hint">H to hide</div>
+</div>
+
+<div id="err">
+  <div><strong>Could not load.</strong>
+    <span>Start the sim server — it serves this page and runs the maneuver.</span>
+    <code>python3 -u server.py<br>→ http://localhost:8000/web/viewer.html</code></div>
+</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js",
+  "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.169.0/examples/jsm/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const RUN = new URLSearchParams(location.search).get('run') || 'blob_demo';
+
+let meta, cfg, settleRaw, nVerts, nodeIJK;
+try {
+  [meta, cfg] = await Promise.all([
+    fetch(`${RUN}.json`).then(r => r.json()),
+    fetch('web_config.json', { cache: 'no-store' }).then(r => r.json()),
+  ]);
+  settleRaw = new Float32Array(await (await fetch(meta.bin)).arrayBuffer());
+  nVerts = meta.n_verts;
+  nodeIJK = meta.node_ijk;
+} catch (e) {
+  document.getElementById('err').style.display = 'grid';
+  throw e;
+}
+
+// ---------------------------------------------------------------- scene
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = cfg.tone_mapping_exposure;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(cfg.background_color);
+
+// the sim is Z-up; tell the camera rather than swizzling axes (a swizzle is a
+// reflection and would invert every face's winding)
+const camera = new THREE.PerspectiveCamera(cfg.camera_fov, innerWidth/innerHeight, 0.01, 100);
+camera.up.set(0, 0, 1);
+
+const lo = new THREE.Vector3(...meta.bounds.min);
+const hi = new THREE.Vector3(...meta.bounds.max);
+const mid = lo.clone().add(hi).multiplyScalar(0.5);
+const span = Math.max(hi.x - lo.x, hi.y - lo.y, 0.5);
+const az = THREE.MathUtils.degToRad(cfg.camera_azimuth);
+const el_ = THREE.MathUtils.degToRad(cfg.camera_elevation);
+const dist = span * cfg.camera_distance;
+camera.position.set(
+  0.5 + dist * Math.cos(el_) * Math.sin(az),
+  0.5 - dist * Math.cos(el_) * Math.cos(az),
+  cfg.camera_target_z + dist * Math.sin(el_));
+
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0.5, 0.5, cfg.camera_target_z);
+controls.enableDamping = true;
+controls.dampingFactor = 0.08;
+controls.update();
+
+const key = new THREE.DirectionalLight(cfg.key_light_color, cfg.key_light_intensity);
+key.position.set(0.5 + cfg.key_light_offset[0], 0.5 + cfg.key_light_offset[1],
+                 cfg.key_light_offset[2]);
+scene.add(key);
+scene.add(new THREE.AmbientLight(cfg.ambient_color, cfg.ambient_intensity));
+
+// ------------------------------------------- floor: render.py's own grid + shading
+const fb = new Float32Array(meta.floor_begin), fe = new Float32Array(meta.floor_end);
+const nSeg = fb.length / 3;
+const floorPos = new Float32Array(nSeg * 6);
+const floorCol = new Float32Array(nSeg * 6);
+for (let s = 0; s < nSeg; s++) {
+  floorPos.set(fb.subarray(s*3, s*3+3), s*6);
+  floorPos.set(fe.subarray(s*3, s*3+3), s*6+3);
+}
+const floorGeo = new THREE.BufferGeometry();
+floorGeo.setAttribute('position', new THREE.BufferAttribute(floorPos, 3));
+floorGeo.setAttribute('color', new THREE.BufferAttribute(floorCol, 3));
+const floor = new THREE.LineSegments(floorGeo,
+  new THREE.LineBasicMaterial({ vertexColors: true }));
+scene.add(floor);
+
+const cFar = new THREE.Color(cfg.floor_far_color), cNear = new THREE.Color(cfg.floor_near_color);
+const _mid = new THREE.Vector3(), _tmp = new THREE.Color();
+const segDepth = new Float32Array(nSeg);
+function shadeFloor() {
+  if (!cfg.floor_depth_shade) {
+    for (let s = 0; s < nSeg; s++)
+      for (let k = 0; k < 2; k++) floorCol.set([cNear.r, cNear.g, cNear.b], s*6 + k*3);
+    floorGeo.attributes.color.needsUpdate = true;
+    return;
+  }
+  let dmin = Infinity, dmax = -Infinity;
+  for (let s = 0; s < nSeg; s++) {
+    _mid.set((floorPos[s*6]+floorPos[s*6+3])/2, (floorPos[s*6+1]+floorPos[s*6+4])/2,
+             (floorPos[s*6+2]+floorPos[s*6+5])/2);
+    const d = -_mid.distanceTo(camera.position);   // closer to camera = "near"
+    segDepth[s] = d;
+    if (d < dmin) dmin = d;
+    if (d > dmax) dmax = d;
+  }
+  const range = Math.max(dmax - dmin, 1e-6);
+  for (let s = 0; s < nSeg; s++) {
+    _tmp.copy(cFar).lerp(cNear, (segDepth[s] - dmin) / range);
+    for (let k = 0; k < 2; k++) floorCol.set([_tmp.r, _tmp.g, _tmp.b], s*6 + k*3);
+  }
+  floorGeo.attributes.color.needsUpdate = true;
+}
+
+// ------------------------------------------- landing zone (render.py's target quad)
+const tc = new Float32Array(meta.target_corners);
+const zoneGeo = new THREE.BufferGeometry();
+zoneGeo.setAttribute('position', new THREE.BufferAttribute(tc, 3));
+zoneGeo.setIndex([0,1,2, 0,2,3]);
+scene.add(new THREE.Mesh(zoneGeo,
+  new THREE.MeshBasicMaterial({ color: cfg.target_fill_color, side: THREE.DoubleSide })));
+const loopPts = [0,1,2,3,0].map(i => new THREE.Vector3(tc[i*3], tc[i*3+1], tc[i*3+2]));
+scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loopPts),
+  new THREE.LineBasicMaterial({ color: cfg.target_edge_color })));
+
+// ---------------------------------------------------------------- blob
+const faces = new Uint32Array(meta.faces);
+const geom = new THREE.BufferGeometry();
+const positions = new Float32Array(nVerts * 3);
+const posAttr = new THREE.BufferAttribute(positions, 3);
+posAttr.setUsage(THREE.DynamicDrawUsage);
+geom.setAttribute('position', posAttr);
+geom.setIndex(new THREE.BufferAttribute(faces, 1));
+
+const material = new THREE.MeshStandardMaterial({
+  color: cfg.object_color, flatShading: cfg.material_flat_shading,
+  roughness: cfg.material_roughness, metalness: cfg.material_metalness,
+});
+const mesh = new THREE.Mesh(geom, material);
+scene.add(mesh);
+
+const wire = new THREE.LineSegments(new THREE.WireframeGeometry(geom),
+  new THREE.LineBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.18 }));
+wire.visible = false;
+scene.add(wire);
+
+const markerGeo = new THREE.SphereGeometry(cfg.probe_marker_radius, 20, 14);
+const markerMat = new THREE.MeshBasicMaterial({ color: cfg.probe_color });
+const markers = new THREE.Group();
+scene.add(markers);
+
+// ------------------------------------------- neighbours (Laplacian relaxation)
+const { nbrStart, nbrList } = (() => {
+  const sets = Array.from({ length: nVerts }, () => new Set());
+  for (let t = 0; t < faces.length; t += 3) {
+    const a = faces[t], b = faces[t+1], c = faces[t+2];
+    sets[a].add(b); sets[a].add(c); sets[b].add(a);
+    sets[b].add(c); sets[c].add(a); sets[c].add(b);
+  }
+  const start = new Uint32Array(nVerts + 1);
+  for (let v = 0; v < nVerts; v++) start[v+1] = start[v] + sets[v].size;
+  const list = new Uint32Array(start[nVerts]);
+  let w = 0;
+  for (let v = 0; v < nVerts; v++) for (const u of sets[v]) list[w++] = u;
+  return { nbrStart: start, nbrList: list };
+})();
+
+const scratch = new Float32Array(nVerts * 3);
+function relax(arr, iters, lambda) {
+  for (let it = 0; it < iters; it++) {
+    for (let v = 0; v < nVerts; v++) {
+      const s = nbrStart[v], e = nbrStart[v+1], k = e - s;
+      if (!k) { scratch[v*3]=arr[v*3]; scratch[v*3+1]=arr[v*3+1]; scratch[v*3+2]=arr[v*3+2]; continue; }
+      let x=0,y=0,z=0;
+      for (let i = s; i < e; i++) { const u = nbrList[i]*3; x+=arr[u]; y+=arr[u+1]; z+=arr[u+2]; }
+      scratch[v*3]   = arr[v*3]   + lambda*(x/k - arr[v*3]);
+      scratch[v*3+1] = arr[v*3+1] + lambda*(y/k - arr[v*3+1]);
+      scratch[v*3+2] = arr[v*3+2] + lambda*(z/k - arr[v*3+2]);
+    }
+    arr.set(scratch);
+  }
+}
+
+// ---------------------------------------------------------------- state
+const $ = id => document.getElementById(id);
+const ui = {
+  status: $('status'), probes: $('probes'), go: $('go'), grip: $('grip'),
+  griplabel: $('griplabel'), gripfill: $('gripfill'), griphandle: $('griphandle'),
+  play: $('play'), clear: $('clear'), frame: $('frame'), scrub: $('scrub'),
+  speed: $('speed'), speedv: $('speedv'), smooth: $('smooth'), smoothv: $('smoothv'),
+  wire: $('wire'), flat: $('flat'), dev: $('dev'),
+};
+ui.speed.value = cfg.default_speed;
+ui.smooth.value = cfg.relax_iterations;
+ui.flat.checked = cfg.material_flat_shading;
+ui.speedv.textContent = `${(+ui.speed.value).toFixed(2)}x`;
+ui.smoothv.textContent = `${ui.smooth.value}`;
+
+let phase = 'settle';                 // settle | place | sim | result
+let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
+let frame = 0, playing = true, acc = 0, last = performance.now();
+let picked = [];
+// bumped by Clear and by each new run, so an in-flight stream can tell that its
+// results are no longer wanted and stop writing into a replaced `src`
+let runToken = 0;
+
+function setPhase(p, msg) {
+  phase = p;
+  ui.status.textContent = msg;
+  app.classList.toggle('placing', p === 'place');
+  ui.go.disabled = !(p === 'place' && picked.length > 0);
+  // grip is an input, not a result control: hide it once the maneuver runs
+  const gripVis = (p === 'sim' || p === 'result') ? 'none' : '';
+  ui.griplabel.style.display = gripVis;
+  document.getElementById('gripwrap').style.display = gripVis;
+}
+
+function setFrame(i, t) {
+  frame = Math.max(0, Math.min(src.n - 1, i));
+  const a0 = frame * nVerts * 3;
+  if (t > 0 && frame + 1 < src.n) {
+    // sub-frame interpolation: blend toward the next content frame so 36/50fps
+    // content stays smooth on 60/120Hz displays (kills frame-cadence judder)
+    const b0 = (frame + 1) * nVerts * 3, r = src.raw;
+    for (let k = 0; k < nVerts * 3; k++)
+      positions[k] = r[a0 + k] + t * (r[b0 + k] - r[a0 + k]);
+  } else {
+    positions.set(src.raw.subarray(a0, a0 + nVerts * 3));
+  }
+  const iters = +ui.smooth.value;
+  if (iters > 0) relax(positions, iters, cfg.relax_lambda);
+  posAttr.needsUpdate = true;
+  geom.computeVertexNormals();        // required: the surface deforms
+  geom.computeBoundingSphere();
+  if (wire.visible) { wire.geometry.dispose(); wire.geometry = new THREE.WireframeGeometry(geom); }
+  ui.scrub.value = String(frame);
+  ui.frame.textContent = `${frame}/${src.n - 1}`;
+  updateMarkers();
+  if (phase === 'result' && src.phases) {
+    const name = src.phase_names[String(src.phases[frame])] || '';
+    ui.status.textContent = name + (name === 'Done' ? '.' : '...');
+  }
+  if (phase === 'settle' && frame >= src.n - 1) {
+    // hand over by any route -- played out, scrubbed, or stepped
+    playing = false; ui.play.textContent = 'Play';
+    setPhase('place', 'PLACE probes  (click the blob · GO to run)');
+    refreshProbes();
+  }
+}
+
+function updateMarkers() {
+  const released = phase === 'result' && src.phases && src.phases[frame] === 5;
+  const want = released ? 0
+             : (phase === 'result' && src.probes ? src.probes[frame].length/3 : picked.length);
+  while (markers.children.length < want) markers.add(new THREE.Mesh(markerGeo, markerMat));
+  while (markers.children.length > want) markers.remove(markers.children[markers.children.length-1]);
+  for (let s = 0; s < want; s++) {
+    const m = markers.children[s];
+    if (phase === 'result' && src.probes) {
+      const p = src.probes[frame];
+      m.position.set(p[s*3], p[s*3+1], p[s*3+2]);
+    } else {
+      const v = picked[s].vertex * 3;
+      m.position.set(positions[v], positions[v+1], positions[v+2]);
+    }
+  }
+}
+
+function setSource(raw, n, probes, phases, phaseNames) {
+  src = { raw, n, probes, phases, phase_names: phaseNames, streaming: false };
+  ui.scrub.max = String(n - 1);
+  frame = 0; acc = 0;
+  setFrame(0);
+}
+
+// ---------------------------------------------------------------- chunk reader
+// Splits the response stream into [uint32 kind][uint32 len][payload] records.
+// Chunks do not align with network packets, so we buffer until one is whole.
+async function* readChunks(reader) {
+  let buf = new Uint8Array(0);
+  for (;;) {
+    while (buf.length >= 8) {
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const kind = dv.getUint32(0, true), len = dv.getUint32(4, true);
+      if (buf.length < 8 + len) break;
+      // slice (not subarray) so the payload starts at offset 0 of its own
+      // buffer -- Float32Array views require a 4-byte aligned offset
+      yield { kind, payload: buf.slice(8, 8 + len) };
+      buf = buf.subarray(8 + len);
+    }
+    const { done, value } = await reader.read();
+    if (done) return;
+    const merged = new Uint8Array(buf.length + value.length);
+    merged.set(buf); merged.set(value, buf.length);
+    buf = merged;
+  }
+}
+
+function refreshProbes() {
+  ui.probes.textContent = `Probes: ${picked.length}/${cfg.max_probes}`;
+  ui.go.disabled = !(phase === 'place' && picked.length > 0);
+}
+
+// ---------------------------------------------------------------- picking
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', e => {
+  downAt = { x: e.clientX, y: e.clientY, t: performance.now() };
+});
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!downAt) return;
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  const quick = performance.now() - downAt.t < 400;
+  downAt = null;
+  if (phase !== 'place' || moved > 4 || !quick) return;   // it was an orbit drag
+  ndc.x = (e.clientX/innerWidth)*2 - 1;
+  ndc.y = -(e.clientY/innerHeight)*2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(mesh)[0];
+  if (!hit) return;
+  let best = hit.face.a, bestD = Infinity;
+  for (const v of [hit.face.a, hit.face.b, hit.face.c]) {
+    const d = (positions[v*3]-hit.point.x)**2 + (positions[v*3+1]-hit.point.y)**2
+            + (positions[v*3+2]-hit.point.z)**2;
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  if (picked.some(p => p.vertex === best) || picked.length >= cfg.max_probes) return;
+  picked.push({ vertex: best, ijk: [nodeIJK[best*3], nodeIJK[best*3+1], nodeIJK[best*3+2]] });
+  refreshProbes(); updateMarkers();
+});
+
+// ---------------------------------------------------------------- server call
+async function runManeuver() {
+  setPhase('sim', 'Simulating on the server... (0.000s)');
+  ui.go.disabled = true;
+  playing = false; ui.play.textContent = 'Play';
+  const t0 = performance.now();
+  const token = ++runToken;
+  const tick = setInterval(() => {          // ~60 Hz so the ms digits read smoothly
+    if (phase === 'sim')
+      ui.status.textContent = 'Simulating on the server... '
+        + `(${((performance.now() - t0) / 1000).toFixed(3)}s)`;
+  }, 16);
+  try {
+    const ok = await runChunked(t0, token);          // progressive (chunked) path
+    if (ok === false) await runSingle(t0, token);    // backend has no chunk endpoint
+  } catch (e) {
+    setPhase('place', `Server error: ${e.message}`);
+    refreshProbes();
+  } finally {
+    clearInterval(tick);
+  }
+}
+
+// Chunked pipeline: request the maneuver a slice at a time; play a slice
+// while the next computes. The trailer of each response carries an opaque
+// state blob that resumes the sim in the next request (any backend container
+// can serve any chunk). CHUNK_PACE slows playback slightly so it never
+// outruns production on the buffered Lambda path.
+const CHUNK_FRAMES = 60, CHUNK_PACE = 0.72;
+async function runChunked(t0, token) {
+  const dec = new TextDecoder();
+  let state = null, head = null, buf = null, tFirst = null, finished = false;
+  while (!finished) {
+    const body = { run: RUN, grip: +ui.grip.value, chunk_frames: CHUNK_FRAMES,
+                   token: SIM_TOKEN };
+    if (state) body.state = state;
+    else body.probes = picked.map(p => p.ijk);
+    const res = await fetch(SIM_CHUNK_URL, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) {
+      if (!head && (res.status === 403 || res.status === 404 || res.status === 405))
+        return false;                                 // fall back to /simulate
+      throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    }
+    const reader = res.body.getReader();
+    for await (const { kind, payload } of readChunks(reader)) {
+      if (token !== runToken) { await reader.cancel(); return true; }
+      if (kind === 3) throw new Error(JSON.parse(dec.decode(payload)).error);
+
+      if (kind === 0) {
+        if (!head) {
+          head = JSON.parse(dec.decode(payload));
+          buf = new Float32Array(head.max_frames * nVerts * 3);
+          phase = 'result';
+          src = { raw: buf, n: 0, probes: [], phases: [],
+                  phase_names: head.phase_names, streaming: true, pace: CHUNK_PACE };
+          frame = 0; acc = 0;
+        }
+      } else if (kind === 1) {
+        const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+        const jlen = dv.getUint32(0, true);
+        const bmeta = JSON.parse(dec.decode(payload.subarray(4, 4 + jlen)));
+        const floats = new Float32Array(payload.buffer,
+                                        payload.byteOffset + 4 + jlen,
+                                        bmeta.n * nVerts * 3);
+        buf.set(floats, bmeta.first * nVerts * 3);
+        for (let i = 0; i < bmeta.n; i++) {
+          src.phases.push(bmeta.phases[i]);
+          src.probes.push(bmeta.probes[i]);
+        }
+        src.n = bmeta.first + bmeta.n;
+        ui.scrub.max = String(src.n - 1);
+        if (tFirst === null) {
+          tFirst = performance.now() - t0;
+          setFrame(0);                    // first geometry -- start playing now
+          playing = true; ui.play.textContent = 'Pause';
+        }
+      } else if (kind === 2) {
+        const tail = JSON.parse(dec.decode(payload));
+        finished = !!tail.done;
+        state = tail.state || null;
+        if (finished) {
+          src.streaming = false; src.pace = 1;
+          src.n = tail.n_frames;
+          ui.scrub.max = String(src.n - 1);
+          console.log(`chunked sim done · first frames in ${tFirst | 0} ms · `
+                      + `round trip ${(performance.now() - t0) | 0} ms`);
+          if (!tail.finite) setPhase('result', 'Result contains NON-FINITE values');
+        }
+      }
+    }
+    if (!head) throw new Error('stream ended before any data');
+  }
+  return true;
+}
+
+async function runSingle(t0, token) {
+    const res = await fetch(SIM_URL, {
+      method: 'POST',
+      body: JSON.stringify({ run: RUN, grip: +ui.grip.value, probes: picked.map(p => p.ijk), token: SIM_TOKEN }),
+    });
+    if (!res.ok) throw new Error((await res.json()).error || res.statusText);
+    const dec = new TextDecoder();
+    let head = null, buf = null, tFirst = null;
+    const reader = res.body.getReader();
+    for await (const { kind, payload } of readChunks(reader)) {
+      if (token !== runToken) { await reader.cancel(); return; }
+      if (kind === 3) throw new Error(JSON.parse(dec.decode(payload)).error);
+
+      if (kind === 0) {
+        head = JSON.parse(dec.decode(payload));
+        buf = new Float32Array(head.max_frames * nVerts * 3);
+        phase = 'result';
+        src = { raw: buf, n: 0, probes: [], phases: [],
+                phase_names: head.phase_names, streaming: true };
+        frame = 0; acc = 0;
+      } else if (kind === 1) {
+        const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+        const jlen = dv.getUint32(0, true);
+        const bmeta = JSON.parse(dec.decode(payload.subarray(4, 4 + jlen)));
+        const floats = new Float32Array(payload.buffer,
+                                        payload.byteOffset + 4 + jlen,
+                                        bmeta.n * nVerts * 3);
+        buf.set(floats, bmeta.first * nVerts * 3);
+        for (let i = 0; i < bmeta.n; i++) {
+          src.phases.push(bmeta.phases[i]);
+          src.probes.push(bmeta.probes[i]);
+        }
+        src.n = bmeta.first + bmeta.n;
+        ui.scrub.max = String(src.n - 1);
+        if (tFirst === null) {
+          tFirst = performance.now() - t0;
+          setFrame(0);
+          playing = true; ui.play.textContent = 'Pause';
+        }
+      } else if (kind === 2) {
+        const tail = JSON.parse(dec.decode(payload));
+        src.streaming = false;
+        src.n = tail.n_frames;
+        ui.scrub.max = String(src.n - 1);
+        if (!tail.finite) setPhase('result', 'Result contains NON-FINITE values');
+      }
+    }
+    if (!head) throw new Error('stream ended before any data');
+}
+
+// ---------------------------------------------------------------- controls
+ui.go.onclick = runManeuver;
+ui.clear.onclick = () => {
+  runToken++;                       // abandon any in-flight stream
+  picked = [];
+  phase = 'settle';
+  setSource(settleRaw, meta.n_frames, null, null, null);
+  setFrame(meta.n_frames - 1);
+};
+function paintGrip() {
+  const t = +ui.grip.value, w = ui.grip.getBoundingClientRect().width;
+  ui.griplabel.textContent = `Grip (squeeze): ${Math.round(t*100)}%`;
+  ui.gripfill.style.width = `${t*100}%`;
+  ui.griphandle.style.left = `${t*w}px`;
+}
+ui.grip.oninput = paintGrip;
+addEventListener('resize', paintGrip);
+ui.play.onclick = () => { playing = !playing; ui.play.textContent = playing ? 'Pause' : 'Play'; };
+ui.scrub.oninput = () => { playing = false; ui.play.textContent = 'Play'; setFrame(+ui.scrub.value); };
+ui.speed.oninput = () => ui.speedv.textContent = `${(+ui.speed.value).toFixed(2)}x`;
+ui.smooth.oninput = () => { ui.smoothv.textContent = ui.smooth.value; setFrame(frame); };
+ui.wire.onchange = () => { wire.visible = ui.wire.checked; setFrame(frame); };
+ui.flat.onchange = () => { material.flatShading = ui.flat.checked; material.needsUpdate = true; };
+addEventListener('keydown', e => {
+  if (e.key === 'h' || e.key === 'H') ui.dev.classList.toggle('hidden');
+});
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+// ---------------------------------------------------------------- loop
+setSource(settleRaw, meta.n_frames, null, null, null);
+setPhase('settle', 'Settling...');
+refreshProbes(); paintGrip(); shadeFloor();
+
+let lastCam = camera.position.clone();
+renderer.setAnimationLoop(() => {
+  const now = performance.now();
+  const dt = (now - last)/1000; last = now;
+  if (playing) {
+    acc += dt * +ui.speed.value * (src.pace || 1);
+    while (acc >= meta.frame_dt) {
+      acc -= meta.frame_dt;
+      if (frame + 1 >= src.n) {
+        if (src.streaming) {            // caught up to the sim -- hold, don't loop
+          acc = 0;
+          ui.status.textContent = (src.phase_names[String(src.phases[frame])] || '')
+            + '... (buffering)';
+          break;
+        }
+        if (cfg.loop_result) setFrame(0); else { playing = false; break; }
+      } else setFrame(frame + 1);
+      if (!playing) break;
+    }
+    if (playing && src.raw && frame + 1 < src.n)
+      setFrame(frame, Math.min(1, acc / meta.frame_dt));
+  }
+  controls.update();
+  if (!camera.position.equals(lastCam)) { shadeFloor(); lastCam.copy(camera.position); }
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html><script>
+// Live sim backend (AWS Lambda). The token is a rate-limiting speed bump by
+// design -- it ships in this file; real cost ceilings are the per-IP rate
+// limit and the account concurrency cap on the function itself.
+const SIM_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate';
+const SIM_CHUNK_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate_chunk';
+// wake the sim backend the moment the page opens: its ~5s cold init runs
+// while the visitor watches the settle and places probes, so the first
+// grasp lands on a warm container (fire-and-forget; response unread)
+fetch('https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/healthz',
+      { mode: 'no-cors', cache: 'no-store' }).catch(() => {});  // AWS backend (CORS-enabled)
+const SIM_TOKEN = '2ipvFHPifLffuihBhY7KQIU5dK-7ixfe';
+</script>
+
