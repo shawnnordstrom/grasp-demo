@@ -6,8 +6,6 @@
 <meta name="description" content="Place grip points on a deformable block, set the squeeze, and a soft-body simulation runs the grasp and the lift — live, in the browser.">
 <link rel="canonical" href="https://shawnnordstrom.github.io/grasp-demo/">
 
-<!-- Link preview card (LinkedIn, Slack, iMessage). Absolute URLs are required
-     here: scrapers do not resolve relative ones. -->
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Shawn Nordstrom">
 <meta property="og:url" content="https://shawnnordstrom.github.io/grasp-demo/">
@@ -29,7 +27,6 @@
   #app { position: fixed; inset: 0; }
   #app.placing { cursor: crosshair; }
 
-  /* HUD laid out like render.py's gui.text/gui.rect overlays */
   #status  { position: fixed; left: 2%; top: 2.2%;  font-size: 15px; color: #AAAAAA; }
   #probes  { position: fixed; left: 2%; top: 5.6%;  font-size: 15px; color: #66CCFF; }
   #go { position: fixed; right: 3.5%; top: 3.5%; width: 92px; height: 46px;
@@ -49,8 +46,6 @@
     border-radius: 50%; background: #fff; pointer-events: none; }
   #grip { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; margin: 0; }
 
-  /* dev controls, deliberately dim so they read as scaffolding not chrome */
-  /* top-left under the probe count, so the bottom stays clear for the grip slider */
   #dev { position: fixed; left: 12px; top: 9.5%; padding: 9px 11px; width: 194px;
     background: rgba(12,12,14,.72); border: 1px solid #23232a; border-radius: 7px;
     font-size: 10.5px; color: #6a6a76; opacity: .62; transition: opacity .15s; }
@@ -97,7 +92,7 @@
 
 <div id="err">
   <div><strong>Could not load.</strong>
-    <span>Start the sim server — it serves this page and runs the maneuver.</span>
+    <span>Start the sim server-—it serves this page and runs the maneuver.</span>
     <code>python3 -u server.py<br>→ http://localhost:8000/web/viewer.html</code></div>
 </div>
 
@@ -140,8 +135,6 @@ app.appendChild(renderer.domElement);
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(cfg.background_color);
 
-// the sim is Z-up; tell the camera rather than swizzling axes (a swizzle is a
-// reflection and would invert every face's winding)
 const camera = new THREE.PerspectiveCamera(cfg.camera_fov, innerWidth/innerHeight, 0.01, 100);
 camera.up.set(0, 0, 1);
 
@@ -300,8 +293,6 @@ let phase = 'settle';                 // settle | place | sim | result
 let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
 let frame = 0, playing = true, acc = 0, last = performance.now();
 let picked = [];
-// bumped by Clear and by each new run, so an in-flight stream can tell that its
-// results are no longer wanted and stop writing into a replaced `src`
 let runToken = 0;
 
 function setPhase(p, msg) {
@@ -309,7 +300,6 @@ function setPhase(p, msg) {
   ui.status.textContent = msg;
   app.classList.toggle('placing', p === 'place');
   ui.go.disabled = !(p === 'place' && picked.length > 0);
-  // grip is an input, not a result control: hide it once the maneuver runs
   const gripVis = (p === 'sim' || p === 'result') ? 'none' : '';
   ui.griplabel.style.display = gripVis;
   document.getElementById('gripwrap').style.display = gripVis;
@@ -319,8 +309,6 @@ function setFrame(i, t) {
   frame = Math.max(0, Math.min(src.n - 1, i));
   const a0 = frame * nVerts * 3;
   if (t > 0 && frame + 1 < src.n) {
-    // sub-frame interpolation: blend toward the next content frame so 36/50fps
-    // content stays smooth on 60/120Hz displays (kills frame-cadence judder)
     const b0 = (frame + 1) * nVerts * 3, r = src.raw;
     for (let k = 0; k < nVerts * 3; k++)
       positions[k] = r[a0 + k] + t * (r[b0 + k] - r[a0 + k]);
@@ -330,7 +318,7 @@ function setFrame(i, t) {
   const iters = +ui.smooth.value;
   if (iters > 0) relax(positions, iters, cfg.relax_lambda);
   posAttr.needsUpdate = true;
-  geom.computeVertexNormals();        // required: the surface deforms
+  geom.computeVertexNormals();
   geom.computeBoundingSphere();
   if (wire.visible) { wire.geometry.dispose(); wire.geometry = new THREE.WireframeGeometry(geom); }
   ui.scrub.value = String(frame);
@@ -341,7 +329,6 @@ function setFrame(i, t) {
     ui.status.textContent = name + (name === 'Done' ? '.' : '...');
   }
   if (phase === 'settle' && frame >= src.n - 1) {
-    // hand over by any route -- played out, scrubbed, or stepped
     playing = false; ui.play.textContent = 'Play';
     setPhase('place', 'PLACE probes  (click the blob · GO to run)');
     refreshProbes();
@@ -374,8 +361,6 @@ function setSource(raw, n, probes, phases, phaseNames) {
 }
 
 // ---------------------------------------------------------------- chunk reader
-// Splits the response stream into [uint32 kind][uint32 len][payload] records.
-// Chunks do not align with network packets, so we buffer until one is whole.
 async function* readChunks(reader) {
   let buf = new Uint8Array(0);
   for (;;) {
@@ -383,8 +368,6 @@ async function* readChunks(reader) {
       const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
       const kind = dv.getUint32(0, true), len = dv.getUint32(4, true);
       if (buf.length < 8 + len) break;
-      // slice (not subarray) so the payload starts at offset 0 of its own
-      // buffer -- Float32Array views require a 4-byte aligned offset
       yield { kind, payload: buf.slice(8, 8 + len) };
       buf = buf.subarray(8 + len);
     }
@@ -436,14 +419,14 @@ async function runManeuver() {
   playing = false; ui.play.textContent = 'Play';
   const t0 = performance.now();
   const token = ++runToken;
-  const tick = setInterval(() => {          // ~60 Hz so the ms digits read smoothly
+  const tick = setInterval(() => {
     if (phase === 'sim')
       ui.status.textContent = 'Simulating on the server... '
         + `(${((performance.now() - t0) / 1000).toFixed(3)}s)`;
   }, 16);
   try {
-    const ok = await runChunked(t0, token);          // progressive (chunked) path
-    if (ok === false) await runSingle(t0, token);    // backend has no chunk endpoint
+    const ok = await runChunked(t0, token);
+    if (ok === false) await runSingle(t0, token);
   } catch (e) {
     setPhase('place', `Server error: ${e.message}`);
     refreshProbes();
@@ -452,11 +435,6 @@ async function runManeuver() {
   }
 }
 
-// Chunked pipeline: request the maneuver a slice at a time; play a slice
-// while the next computes. The trailer of each response carries an opaque
-// state blob that resumes the sim in the next request (any backend container
-// can serve any chunk). CHUNK_PACE slows playback slightly so it never
-// outruns production on the buffered Lambda path.
 const CHUNK_FRAMES = 60, CHUNK_PACE = 0.72;
 async function runChunked(t0, token) {
   const dec = new TextDecoder();
@@ -502,7 +480,7 @@ async function runChunked(t0, token) {
         ui.scrub.max = String(src.n - 1);
         if (tFirst === null) {
           tFirst = performance.now() - t0;
-          setFrame(0);                    // first geometry -- start playing now
+          setFrame(0);
           playing = true; ui.play.textContent = 'Pause';
         }
       } else if (kind === 2) {
@@ -577,7 +555,7 @@ async function runSingle(t0, token) {
 // ---------------------------------------------------------------- controls
 ui.go.onclick = runManeuver;
 ui.clear.onclick = () => {
-  runToken++;                       // abandon any in-flight stream
+  runToken++;
   picked = [];
   phase = 'settle';
   setSource(settleRaw, meta.n_frames, null, null, null);
@@ -640,16 +618,10 @@ renderer.setAnimationLoop(() => {
 </script>
 </body>
 </html><script>
-// Live sim backend (AWS Lambda). The token is a rate-limiting speed bump by
-// design -- it ships in this file; real cost ceilings are the per-IP rate
-// limit and the account concurrency cap on the function itself.
 const SIM_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate';
 const SIM_CHUNK_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate_chunk';
-// wake the sim backend the moment the page opens: its ~5s cold init runs
-// while the visitor watches the settle and places probes, so the first
-// grasp lands on a warm container (fire-and-forget; response unread)
 fetch('https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/healthz',
-      { mode: 'no-cors', cache: 'no-store' }).catch(() => {});  // AWS backend (CORS-enabled)
+      { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
 const SIM_TOKEN = '2ipvFHPifLffuihBhY7KQIU5dK-7ixfe';
 </script>
 
