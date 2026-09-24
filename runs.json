@@ -1,0 +1,42 @@
+[
+ {
+  "run": "blob_demo",
+  "label": "demo: jelly cube (original)"
+ },
+ {
+  "run": "blob_grid_cube_soft",
+  "label": "cube \u00b7 soft"
+ },
+ {
+  "run": "blob_grid_cube_middle",
+  "label": "cube \u00b7 middle"
+ },
+ {
+  "run": "blob_grid_cube_hard",
+  "label": "cube \u00b7 hard"
+ },
+ {
+  "run": "blob_grid_sphere_soft",
+  "label": "sphere \u00b7 soft"
+ },
+ {
+  "run": "blob_grid_sphere_middle",
+  "label": "sphere \u00b7 middle"
+ },
+ {
+  "run": "blob_grid_sphere_hard",
+  "label": "sphere \u00b7 hard"
+ },
+ {
+  "run": "blob_grid_beanbag_soft",
+  "label": "bean bag \u00b7 soft"
+ },
+ {
+  "run": "blob_grid_beanbag_middle",
+  "label": "bean bag \u00b7 middle"
+ },
+ {
+  "run": "blob_grid_beanbag_hard",
+  "label": "bean bag \u00b7 hard"
+ }
+]

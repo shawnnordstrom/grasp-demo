@@ -68,6 +68,31 @@
 <div id="app"></div>
 
 <div id="status">loading…</div>
+<div id="stimgrid" title="stimulus: shape (rows) x material (columns)"
+  style="position:fixed;right:3.5%;top:12.5%;z-index:5;display:grid;grid-template-columns:auto repeat(3,44px);gap:3px;font:11px system-ui;color:#aaa;align-items:center"></div>
+<script>
+(async () => {
+  const g = document.getElementById('stimgrid');
+  const q = new URLSearchParams(location.search); const cur = q.get('run') || 'blob_demo';
+  let runs = [];
+  try { runs = await (await fetch('runs.json', { cache: 'no-store' })).json(); } catch (e) { g.style.display = 'none'; return; }
+  const shapes = ['cube', 'sphere', 'beanbag'], mats = ['soft', 'middle', 'hard'];
+  const label = { cube: 'cube', sphere: 'sphere', beanbag: 'bag' };
+  const cell = (txt, run) => {
+    const b = document.createElement(run ? 'button' : 'div'); b.textContent = txt;
+    b.style.cssText = 'background:' + (run === cur ? '#3BE38B' : '#161616') + ';color:' + (run === cur ? '#000' : '#ccc')
+      + ';border:1px solid #444;border-radius:3px;padding:4px 0;text-align:center;font:11px system-ui;cursor:' + (run ? 'pointer' : 'default');
+    if (!run) { b.style.background = 'transparent'; b.style.border = 'none'; b.style.color = '#888'; }
+    if (run) b.onclick = () => { q.set('run', run); location.search = q.toString(); };
+    return b;
+  };
+  g.appendChild(cell('', null)); mats.forEach(m => g.appendChild(cell(m, null)));
+  shapes.forEach(sh => { g.appendChild(cell(label[sh], null)); mats.forEach(m => {
+    const run = 'blob_grid_' + sh + '_' + m;
+    g.appendChild(runs.some(r => r.run === run) ? cell('●', run) : cell('', null)); }); });
+  const d = cell('demo cube', 'blob_demo'); d.style.gridColumn = '1 / span 4'; d.style.marginTop = '4px'; g.appendChild(d);
+})();
+</script>
 <div id="probes"></div>
 <button id="go" disabled>GO</button>
 
@@ -618,10 +643,28 @@ renderer.setAnimationLoop(() => {
 </script>
 </body>
 </html><script>
+<<<<<<< HEAD
 const SIM_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate';
 const SIM_CHUNK_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate_chunk';
 fetch('https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/healthz',
       { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
+=======
+// Live sim backend (AWS Lambda). The token is a rate-limiting speed bump by
+// design -- it ships in this file; real cost ceilings are the per-IP rate
+// limit and the account concurrency cap on the function itself.
+// ?api=<origin> points the live sim elsewhere (local preview: ?api= with an empty
+// value means same-origin, i.e. the sim server that is also serving this page).
+const _q = new URLSearchParams(location.search);
+const API = _q.has('api') ? _q.get('api').replace(/\/+$/, '')
+                          : 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com';
+const SIM_URL = API + '/simulate';
+const SIM_CHUNK_URL = API + '/simulate_chunk';
+// wake the sim backend the moment the page opens: its ~5s cold init runs
+// while the visitor watches the settle and places probes, so the first
+// grasp lands on a warm container (fire-and-forget; response unread)
+fetch(API + '/healthz',
+      { mode: 'no-cors', cache: 'no-store' }).catch(() => {});  // AWS backend (CORS-enabled)
+>>>>>>> 229b642 (3x3 grid)
 const SIM_TOKEN = '2ipvFHPifLffuihBhY7KQIU5dK-7ixfe';
 </script>
 
