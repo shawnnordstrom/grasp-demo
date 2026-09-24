@@ -643,12 +643,6 @@ renderer.setAnimationLoop(() => {
 </script>
 </body>
 </html><script>
-<<<<<<< HEAD
-const SIM_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate';
-const SIM_CHUNK_URL = 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/simulate_chunk';
-fetch('https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com/healthz',
-      { mode: 'no-cors', cache: 'no-store' }).catch(() => {});
-=======
 // Live sim backend (AWS Lambda). The token is a rate-limiting speed bump by
 // design -- it ships in this file; real cost ceilings are the per-IP rate
 // limit and the account concurrency cap on the function itself.
@@ -664,7 +658,6 @@ const SIM_CHUNK_URL = API + '/simulate_chunk';
 // grasp lands on a warm container (fire-and-forget; response unread)
 fetch(API + '/healthz',
       { mode: 'no-cors', cache: 'no-store' }).catch(() => {});  // AWS backend (CORS-enabled)
->>>>>>> 229b642 (3x3 grid)
 const SIM_TOKEN = '2ipvFHPifLffuihBhY7KQIU5dK-7ixfe';
 </script>
 
