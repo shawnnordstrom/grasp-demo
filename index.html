@@ -96,10 +96,10 @@
 <div id="probes"></div>
 <button id="go" disabled>GO</button>
 
-<div id="griplabel">Grip (squeeze): 100%</div>
+<div id="griplabel">Grip (squeeze): 50%</div>
 <div id="gripwrap">
   <div id="griptrack"></div><div id="gripfill"></div><div id="griphandle"></div>
-  <input type="range" id="grip" min="0" max="1" step="0.01" value="1">
+  <input type="range" id="grip" min="0" max="1" step="0.01" value="0.5">
 </div>
 
 <div id="dev">
@@ -108,8 +108,7 @@
   <div class="r"><label for="scrub">frame</label><input type="range" id="scrub" min="0" max="0"></div>
   <div class="r" style="display:none"><label for="speed">speed</label><input type="range" id="speed" min="0.1" max="1" step="0.05">
     <span class="v" id="speedv"></span></div>
-  <div class="r"><label for="smooth">relax</label><input type="range" id="smooth" min="0" max="6" step="1">
-    <span class="v" id="smoothv"></span></div>
+  <input type="range" id="smooth" min="0" max="40" step="1" hidden><span id="smoothv" hidden></span>
   <div class="r"><label><input type="checkbox" id="wire"> wire</label>
     <label><input type="checkbox" id="flat"> flat</label></div>
   <div class="hint">H to hide</div>
@@ -284,8 +283,7 @@ const { nbrStart, nbrList } = (() => {
 })();
 
 const scratch = new Float32Array(nVerts * 3);
-function relax(arr, iters, lambda) {
-  for (let it = 0; it < iters; it++) {
+function relaxPass(arr, lambda) {
     for (let v = 0; v < nVerts; v++) {
       const s = nbrStart[v], e = nbrStart[v+1], k = e - s;
       if (!k) { scratch[v*3]=arr[v*3]; scratch[v*3+1]=arr[v*3+1]; scratch[v*3+2]=arr[v*3+2]; continue; }
@@ -296,6 +294,14 @@ function relax(arr, iters, lambda) {
       scratch[v*3+2] = arr[v*3+2] + lambda*(z/k - arr[v*3+2]);
     }
     arr.set(scratch);
+}
+// Taubin smoothing: a lambda pass then a mu pass (mu < -lambda) per iteration.
+// Plain Laplacian (mu = 0) shrinks the mesh; the physics contacts this exact
+// smoothed surface (core CONTACT_RELAX_*), so keep relax_mu equal to it.
+function relax(arr, iters, lambda, mu) {
+  for (let it = 0; it < iters; it++) {
+    relaxPass(arr, lambda);
+    if (mu) relaxPass(arr, mu);
   }
 }
 
@@ -312,7 +318,7 @@ ui.speed.value = cfg.default_speed;
 ui.smooth.value = cfg.relax_iterations;
 ui.flat.checked = cfg.material_flat_shading;
 ui.speedv.textContent = `${(+ui.speed.value).toFixed(2)}x`;
-ui.smoothv.textContent = `${ui.smooth.value}`;
+ui.smoothv.textContent = `physics (${ui.smooth.value})`;
 
 let phase = 'settle';                 // settle | place | sim | result
 let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
@@ -341,7 +347,7 @@ function setFrame(i, t) {
     positions.set(src.raw.subarray(a0, a0 + nVerts * 3));
   }
   const iters = +ui.smooth.value;
-  if (iters > 0) relax(positions, iters, cfg.relax_lambda);
+  if (iters > 0) relax(positions, iters, cfg.relax_lambda, cfg.relax_mu || 0);
   posAttr.needsUpdate = true;
   geom.computeVertexNormals();
   geom.computeBoundingSphere();
