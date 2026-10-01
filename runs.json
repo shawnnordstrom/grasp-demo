@@ -4,6 +4,14 @@
   "label": "demo: jelly cube (original)"
  },
  {
+  "run": "blob_grid_cube_slouch",
+  "label": "cube \u00b7 slouch"
+ },
+ {
+  "run": "blob_grid_cube_softer",
+  "label": "cube \u00b7 softer"
+ },
+ {
   "run": "blob_grid_cube_soft",
   "label": "cube \u00b7 soft"
  },
@@ -16,6 +24,14 @@
   "label": "cube \u00b7 hard"
  },
  {
+  "run": "blob_grid_sphere_slouch",
+  "label": "sphere \u00b7 slouch"
+ },
+ {
+  "run": "blob_grid_sphere_softer",
+  "label": "sphere \u00b7 softer"
+ },
+ {
   "run": "blob_grid_sphere_soft",
   "label": "sphere \u00b7 soft"
  },
@@ -26,6 +42,14 @@
  {
   "run": "blob_grid_sphere_hard",
   "label": "sphere \u00b7 hard"
+ },
+ {
+  "run": "blob_grid_beanbag_slouch",
+  "label": "bean bag \u00b7 slouch"
+ },
+ {
+  "run": "blob_grid_beanbag_softer",
+  "label": "bean bag \u00b7 softer"
  },
  {
   "run": "blob_grid_beanbag_soft",
