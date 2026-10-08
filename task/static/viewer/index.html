@@ -1,0 +1,497 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>viewer</title>
+<!--
+  One object, embedded by task.js in an iframe (one fresh document per object). Stripped copy of
+  the public demo page (grasp-demo/index.html): same scene, same Taubin smoothing as the physics
+  contact surface, same chunked live sim.
+    kind=grasp  watch it fall, place 1-5 fingers, GO once; posts {type:'grasp_done'} to the parent
+    kind=watch  play the fall once and hold the last frame; no interaction; each {type:'play'} from
+                the parent (re)starts it, and {type:'played'} is posted at the end of every play
+  Messages to the parent: loaded, ready_to_place, go, grasp_done, sim_error, played, error.
+  Params: run, base (folder of the blob and web_config.json, default ../data), kind, mode, pid,
+          session, trial, page, attempt0, grip (fixed squeeze, default 0.5), showgrip=1 (slider
+          visible), feedback=none|simple|full, api (sim origin; absent = the deployed Lambda)
+-->
+<style>
+  :root { color-scheme: dark; }
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font: 13px/1.4 ui-sans-serif, system-ui, -apple-system, sans-serif; color: #aaa; }
+  #app { position: fixed; inset: 0; }
+  #app.placing { cursor: crosshair; }
+  #status  { position: fixed; left: 14px; top: 10px; font-size: 15px; color: #ccc; }
+  #probes  { position: fixed; left: 14px; top: 34px; font-size: 15px; color: #66CCFF; }
+  #undo { position: fixed; left: 14px; top: 60px; display: none; background: none; color: #888;
+    border: 1px solid #444; border-radius: 3px; padding: 2px 8px; font: inherit; cursor: pointer; }
+  #go { position: fixed; right: 16px; top: 12px; width: 92px; height: 46px;
+    border: 2px solid #3BE38B; border-radius: 3px; background: transparent;
+    color: #3BE38B; font-size: 25px; font-weight: 600; letter-spacing: .06em;
+    cursor: pointer; display: grid; place-content: center; }
+  #go[disabled] { opacity: .3; cursor: default; }
+  #go:hover:not([disabled]) { background: rgba(59,227,139,.11); }
+  #fb { position: fixed; left: 0; right: 0; bottom: 18%; text-align: center; font-size: 26px;
+    font-weight: 600; display: none; }
+  #griplabel { position: fixed; left: 14px; bottom: 6.6%; font-size: 15px; color: #3BE38B; }
+  #gripwrap { position: fixed; left: 15%; right: 15%; bottom: 4.2%; height: 22px; }
+  #griptrack { position: absolute; inset: 9px 0 auto 0; height: 4px; background: #444; border-radius: 2px; }
+  #gripfill { position: absolute; inset: 9px auto auto 0; height: 4px; background: #3BE38B; border-radius: 2px; }
+  #griphandle { position: absolute; top: 3px; width: 15px; height: 15px; margin-left: -7px;
+    border-radius: 50%; background: #fff; pointer-events: none; }
+  #grip { position: absolute; inset: 0; width: 100%; opacity: 0; cursor: pointer; margin: 0; }
+  .watch #status, .watch #probes, .watch #go, .watch #griplabel, .watch #gripwrap { display: none; }
+  #err { position: fixed; inset: 0; display: none; place-content: center; text-align: center;
+    padding: 20px; color: #e0655f; }
+</style>
+</head>
+<body>
+<div id="app"></div>
+<div id="status">loading…</div>
+<div id="probes"></div>
+<button id="undo">undo finger</button>
+<button id="go" disabled>GO</button>
+<div id="fb"></div>
+<div id="griplabel">Grip: 50%</div>
+<div id="gripwrap">
+  <div id="griptrack"></div><div id="gripfill"></div><div id="griphandle"></div>
+  <input type="range" id="grip" min="0" max="1" step="0.01" value="0.5">
+</div>
+<div id="err">Could not load this object. Please reload the page.</div>
+
+<script>
+const _q = new URLSearchParams(location.search);
+const API = _q.has('api') ? _q.get('api').replace(/\/+$/, '')
+                          : 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com';
+const SIM_URL = API + '/simulate';
+const SIM_CHUNK_URL = API + '/simulate_chunk';
+const SIM_TOKEN = '2ipvFHPifLffuihBhY7KQIU5dK-7ixfe';
+</script>
+
+<script type="importmap">
+{ "imports": {
+  "three": "../lib/three/three.module.js",
+  "three/addons/": "../lib/three/addons/"
+} }
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const q = new URLSearchParams(location.search);
+const RUN = q.get('run') || 'blob_demo';
+const BASE = (q.get('base') || '../data').replace(/\/+$/, '');
+const KIND = q.get('kind') === 'watch' ? 'watch' : 'grasp';
+const MODE = ['participant', 'test', 'demo'].includes(q.get('mode')) ? q.get('mode') : 'test';
+const PARTICIPANT = q.get('pid') || null;
+const SESSION = q.get('session') || null;
+const TRIAL = q.get('trial') || null;
+const PAGE = q.get('page') || 'psiturk';
+const FEEDBACK = q.get('feedback') || 'none';
+const GRIP = Math.min(1, Math.max(0, parseFloat(q.get('grip') ?? '0.5')));
+const SHOW_GRIP = q.get('showgrip') === '1';
+let ATTEMPT = parseInt(q.get('attempt0') || '0', 10), tPlaceStart = null, tFirstClick = null;
+const post = msg => parent !== window && parent.postMessage(Object.assign({ trial: TRIAL, run: RUN }, msg), '*');
+if (KIND === 'watch') document.body.classList.add('watch');
+
+let meta, cfg, settleRaw, nVerts, nodeIJK;
+try {
+  [meta, cfg] = await Promise.all([
+    fetch(`${BASE}/${RUN}.json`).then(r => r.json()),
+    fetch(`${BASE}/web_config.json`).then(r => r.json()),
+  ]);
+  settleRaw = new Float32Array(await (await fetch(`${BASE}/${meta.bin}`)).arrayBuffer());
+  nVerts = meta.n_verts;
+  nodeIJK = meta.node_ijk;
+} catch (e) {
+  document.getElementById('err').style.display = 'grid';
+  post({ type: 'error', error: String(e) });
+  throw e;
+}
+
+// ---------------------------------------------------------------- scene
+const app = document.getElementById('app');
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = cfg.tone_mapping_exposure;
+app.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(cfg.background_color);
+const camera = new THREE.PerspectiveCamera(cfg.camera_fov, innerWidth/innerHeight, 0.01, 100);
+camera.up.set(0, 0, 1);
+const az = THREE.MathUtils.degToRad(cfg.camera_azimuth), el_ = THREE.MathUtils.degToRad(cfg.camera_elevation);
+// Same camera distance for every object, so size on screen is comparable across trials (the demo
+// frames the whole bounce, which leaves bouncy objects tiny). watch: aimed at where the object
+// comes to rest (on bumpy floors it rolls away from the centre); grasp: halfway between the
+// resting object and the green square, so the carry stays in view.
+const L = (meta.n_frames - 1) * nVerts * 3;
+let cx = 0, cy = 0;
+for (let v = 0; v < nVerts; v++) { cx += settleRaw[L + v*3]; cy += settleRaw[L + v*3 + 1]; }
+cx /= nVerts; cy /= nVerts;
+if (KIND === 'grasp' && meta.target_xy) { cx = (cx + meta.target_xy[0]) / 2; cy = (cy + meta.target_xy[1]) / 2; }
+const dist = (KIND === 'watch' ? 0.55 : 0.62) * cfg.camera_distance;
+camera.position.set(cx + dist * Math.cos(el_) * Math.sin(az), cy - dist * Math.cos(el_) * Math.cos(az),
+                    cfg.camera_target_z + dist * Math.sin(el_));
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(cx, cy, cfg.camera_target_z);
+controls.enableDamping = true; controls.dampingFactor = 0.08;
+controls.enabled = KIND === 'grasp';
+controls.update();
+
+const key = new THREE.DirectionalLight(cfg.key_light_color, cfg.key_light_intensity);
+key.position.set(0.5 + cfg.key_light_offset[0], 0.5 + cfg.key_light_offset[1], cfg.key_light_offset[2]);
+scene.add(key);
+scene.add(new THREE.AmbientLight(cfg.ambient_color, cfg.ambient_intensity));
+
+// floor
+const fb = new Float32Array(meta.floor_begin), fe = new Float32Array(meta.floor_end);
+const nSeg = fb.length / 3;
+const floorPos = new Float32Array(nSeg * 6), floorCol = new Float32Array(nSeg * 6);
+for (let s = 0; s < nSeg; s++) { floorPos.set(fb.subarray(s*3, s*3+3), s*6); floorPos.set(fe.subarray(s*3, s*3+3), s*6+3); }
+const floorGeo = new THREE.BufferGeometry();
+floorGeo.setAttribute('position', new THREE.BufferAttribute(floorPos, 3));
+floorGeo.setAttribute('color', new THREE.BufferAttribute(floorCol, 3));
+scene.add(new THREE.LineSegments(floorGeo, new THREE.LineBasicMaterial({ vertexColors: true })));
+const cFar = new THREE.Color(cfg.floor_far_color), cNear = new THREE.Color(cfg.floor_near_color);
+const _mid = new THREE.Vector3(), _tmp = new THREE.Color(), segDepth = new Float32Array(nSeg);
+function shadeFloor() {
+  let dmin = Infinity, dmax = -Infinity;
+  for (let s = 0; s < nSeg; s++) {
+    _mid.set((floorPos[s*6]+floorPos[s*6+3])/2, (floorPos[s*6+1]+floorPos[s*6+4])/2, (floorPos[s*6+2]+floorPos[s*6+5])/2);
+    const d = -_mid.distanceTo(camera.position);
+    segDepth[s] = d; if (d < dmin) dmin = d; if (d > dmax) dmax = d;
+  }
+  const range = Math.max(dmax - dmin, 1e-6);
+  for (let s = 0; s < nSeg; s++) {
+    _tmp.copy(cFar).lerp(cNear, cfg.floor_depth_shade ? (segDepth[s] - dmin) / range : 1);
+    for (let k = 0; k < 2; k++) floorCol.set([_tmp.r, _tmp.g, _tmp.b], s*6 + k*3);
+  }
+  floorGeo.attributes.color.needsUpdate = true;
+}
+
+// landing zone (grasp only)
+if (KIND === 'grasp') {
+  const tc = new Float32Array(meta.target_corners);
+  const zoneGeo = new THREE.BufferGeometry();
+  zoneGeo.setAttribute('position', new THREE.BufferAttribute(tc, 3));
+  zoneGeo.setIndex([0,1,2, 0,2,3]);
+  scene.add(new THREE.Mesh(zoneGeo, new THREE.MeshBasicMaterial({ color: cfg.target_fill_color, side: THREE.DoubleSide })));
+  const loopPts = [0,1,2,3,0].map(i => new THREE.Vector3(tc[i*3], tc[i*3+1], tc[i*3+2]));
+  scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loopPts), new THREE.LineBasicMaterial({ color: cfg.target_edge_color })));
+}
+
+// blob
+const faces = new Uint32Array(meta.faces);
+const geom = new THREE.BufferGeometry();
+const positions = new Float32Array(nVerts * 3);
+const posAttr = new THREE.BufferAttribute(positions, 3);
+posAttr.setUsage(THREE.DynamicDrawUsage);
+geom.setAttribute('position', posAttr);
+geom.setIndex(new THREE.BufferAttribute(faces, 1));
+const mesh = new THREE.Mesh(geom, new THREE.MeshStandardMaterial({
+  color: cfg.object_color, flatShading: cfg.material_flat_shading,
+  roughness: cfg.material_roughness, metalness: cfg.material_metalness }));
+scene.add(mesh);
+const markerGeo = new THREE.SphereGeometry(cfg.probe_marker_radius, 20, 14);
+const markerMat = new THREE.MeshBasicMaterial({ color: cfg.probe_color });
+const markers = new THREE.Group();
+scene.add(markers);
+
+// Taubin smoothing, identical to the demo page and the physics contact surface
+const { nbrStart, nbrList } = (() => {
+  const sets = Array.from({ length: nVerts }, () => new Set());
+  for (let t = 0; t < faces.length; t += 3) {
+    const a = faces[t], b = faces[t+1], c = faces[t+2];
+    sets[a].add(b); sets[a].add(c); sets[b].add(a); sets[b].add(c); sets[c].add(a); sets[c].add(b);
+  }
+  const start = new Uint32Array(nVerts + 1);
+  for (let v = 0; v < nVerts; v++) start[v+1] = start[v] + sets[v].size;
+  const list = new Uint32Array(start[nVerts]);
+  let w = 0;
+  for (let v = 0; v < nVerts; v++) for (const u of sets[v]) list[w++] = u;
+  return { nbrStart: start, nbrList: list };
+})();
+const scratch = new Float32Array(nVerts * 3);
+function relaxPass(arr, lambda) {
+  for (let v = 0; v < nVerts; v++) {
+    const s = nbrStart[v], e = nbrStart[v+1], k = e - s;
+    if (!k) { scratch[v*3]=arr[v*3]; scratch[v*3+1]=arr[v*3+1]; scratch[v*3+2]=arr[v*3+2]; continue; }
+    let x=0,y=0,z=0;
+    for (let i = s; i < e; i++) { const u = nbrList[i]*3; x+=arr[u]; y+=arr[u+1]; z+=arr[u+2]; }
+    scratch[v*3]   = arr[v*3]   + lambda*(x/k - arr[v*3]);
+    scratch[v*3+1] = arr[v*3+1] + lambda*(y/k - arr[v*3+1]);
+    scratch[v*3+2] = arr[v*3+2] + lambda*(z/k - arr[v*3+2]);
+  }
+  arr.set(scratch);
+}
+function relax(arr, iters, lambda, mu) {
+  for (let it = 0; it < iters; it++) { relaxPass(arr, lambda); if (mu) relaxPass(arr, mu); }
+}
+
+// ---------------------------------------------------------------- state
+const $ = id => document.getElementById(id);
+const ui = { status: $('status'), probes: $('probes'), go: $('go'), grip: $('grip'), undo: $('undo'),
+  griplabel: $('griplabel'), gripfill: $('gripfill'), griphandle: $('griphandle'), fb: $('fb') };
+ui.grip.value = String(GRIP);
+const SPEED = cfg.default_speed;
+
+let phase = 'settle';                 // settle | place | sim | result | done
+let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
+let frame = 0, playing = KIND === 'grasp', acc = 0, last = performance.now();
+let picked = [], runToken = 0;
+
+function setPhase(p, msg) {
+  phase = p;
+  ui.status.textContent = msg;
+  app.classList.toggle('placing', p === 'place');
+  ui.go.disabled = !(p === 'place' && picked.length > 0);
+  ui.go.style.display = (p === 'place' || p === 'settle') ? '' : 'none';
+  ui.undo.style.display = (p === 'place' && picked.length) ? 'block' : 'none';
+  if (p !== 'place') ui.probes.textContent = '';
+  const gripVis = (SHOW_GRIP && (p === 'place' || p === 'settle')) ? '' : 'none';
+  ui.griplabel.style.display = gripVis; $('gripwrap').style.display = gripVis;
+}
+
+function outcomeFeedback(o) {
+  if (!o || FEEDBACK === 'none') return null;
+  if (FEEDBACK === 'simple') return o.held ? ['You lifted it!', '#3BE38B'] : ['It slipped.', '#e0a05f'];
+  return [(o.held ? (o.carried ? 'held and carried' : 'held, dropped in carry') : 'slipped')
+          + ` · rise ${(o.peak_rise * 100).toFixed(0)} cm`
+          + (o.landing_dist != null ? ` · ${(o.landing_dist * 100).toFixed(0)} cm from target` : ''), '#ccc'];
+}
+
+function setFrame(i, t) {
+  frame = Math.max(0, Math.min(src.n - 1, i));
+  const a0 = frame * nVerts * 3;
+  if (t > 0 && frame + 1 < src.n) {
+    const b0 = (frame + 1) * nVerts * 3, r = src.raw;
+    for (let k = 0; k < nVerts * 3; k++) positions[k] = r[a0 + k] + t * (r[b0 + k] - r[a0 + k]);
+  } else positions.set(src.raw.subarray(a0, a0 + nVerts * 3));
+  relax(positions, cfg.relax_iterations, cfg.relax_lambda, cfg.relax_mu || 0);
+  posAttr.needsUpdate = true;
+  geom.computeVertexNormals(); geom.computeBoundingSphere();
+  updateMarkers();
+  if (phase === 'result' && src.phases) {
+    const name = src.phase_names[String(src.phases[frame])] || '';
+    ui.status.textContent = name + (name === 'Done' ? '.' : '...');
+    if (name === 'Done' && !src.streaming) finishResult();
+  }
+  if (KIND === 'grasp' && phase === 'settle' && frame >= src.n - 1) {
+    playing = false;
+    setPhase('place', 'Click the object to place fingers, then press GO.');
+    tPlaceStart = performance.now(); tFirstClick = null;
+    refreshProbes();
+    post({ type: 'ready_to_place' });
+  }
+}
+
+function finishResult() {
+  if (phase !== 'result') return;
+  phase = 'done';
+  playing = false;
+  const f = outcomeFeedback(window.lastOutcome);
+  if (f) { ui.fb.textContent = f[0]; ui.fb.style.color = f[1]; ui.fb.style.display = 'block'; }
+  post({ type: 'grasp_done', outcome: window.lastOutcome || null, logged: window.lastLogged || null,
+         n_fingers: picked.length, clicks: picked.map(p => p.point), probes: picked.map(p => p.ijk),
+         grip: +ui.grip.value });
+}
+
+function updateMarkers() {
+  const released = (phase === 'result' || phase === 'done') && src.phases && src.phases[frame] === 5;
+  const fromSim = (phase === 'result' || phase === 'done') && src.probes;
+  const want = released ? 0 : (fromSim ? src.probes[frame].length/3 : picked.length);
+  while (markers.children.length < want) markers.add(new THREE.Mesh(markerGeo, markerMat));
+  while (markers.children.length > want) markers.remove(markers.children[markers.children.length-1]);
+  for (let s = 0; s < want; s++) {
+    const m = markers.children[s];
+    if (fromSim) { const p = src.probes[frame]; m.position.set(p[s*3], p[s*3+1], p[s*3+2]); }
+    else { const v = picked[s].vertex * 3; m.position.set(positions[v], positions[v+1], positions[v+2]); }
+  }
+}
+
+function refreshProbes() {
+  ui.probes.textContent = phase === 'place' ? `Fingers: ${picked.length} of ${cfg.max_probes}` : '';
+  ui.go.disabled = !(phase === 'place' && picked.length > 0);
+  ui.undo.style.display = (phase === 'place' && picked.length) ? 'block' : 'none';
+}
+
+// ---------------------------------------------------------------- chunk reader
+async function* readChunks(reader) {
+  let buf = new Uint8Array(0);
+  for (;;) {
+    while (buf.length >= 8) {
+      const dv = new DataView(buf.buffer, buf.byteOffset, buf.byteLength);
+      const kind = dv.getUint32(0, true), len = dv.getUint32(4, true);
+      if (buf.length < 8 + len) break;
+      yield { kind, payload: buf.slice(8, 8 + len) };
+      buf = buf.subarray(8 + len);
+    }
+    const { done, value } = await reader.read();
+    if (done) return;
+    const merged = new Uint8Array(buf.length + value.length);
+    merged.set(buf); merged.set(value, buf.length);
+    buf = merged;
+  }
+}
+
+// ---------------------------------------------------------------- picking
+const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener('pointerdown', e => { downAt = { x: e.clientX, y: e.clientY, t: performance.now() }; });
+renderer.domElement.addEventListener('pointerup', e => {
+  if (!downAt) return;
+  const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
+  const quick = performance.now() - downAt.t < 400;
+  downAt = null;
+  if (phase !== 'place' || moved > 4 || !quick) return;   // it was an orbit drag
+  ndc.x = (e.clientX/innerWidth)*2 - 1; ndc.y = -(e.clientY/innerHeight)*2 + 1;
+  ray.setFromCamera(ndc, camera);
+  const hit = ray.intersectObject(mesh)[0];
+  if (!hit) return;
+  let best = hit.face.a, bestD = Infinity;
+  for (const v of [hit.face.a, hit.face.b, hit.face.c]) {
+    const d = (positions[v*3]-hit.point.x)**2 + (positions[v*3+1]-hit.point.y)**2 + (positions[v*3+2]-hit.point.z)**2;
+    if (d < bestD) { bestD = d; best = v; }
+  }
+  if (picked.some(p => p.vertex === best) || picked.length >= cfg.max_probes) return;
+  if (tFirstClick === null) tFirstClick = performance.now();
+  picked.push({ vertex: best, ijk: [nodeIJK[best*3], nodeIJK[best*3+1], nodeIJK[best*3+2]],
+                point: [+hit.point.x.toFixed(5), +hit.point.y.toFixed(5), +hit.point.z.toFixed(5)] });
+  refreshProbes(); updateMarkers();
+});
+ui.undo.onclick = () => { if (phase === 'place') { picked.pop(); refreshProbes(); updateMarkers(); } };
+
+// ---------------------------------------------------------------- server call (one try)
+async function runManeuver() {
+  if (phase !== 'place' || !picked.length) return;
+  setPhase('sim', 'Starting...');
+  const t0 = performance.now();
+  const token = ++runToken;
+  post({ type: 'go' });
+  try {
+    await runChunked(t0, token);
+  } catch (e) {
+    setPhase('place', `Connection problem (${e.message}). Press GO to try again.`);
+    refreshProbes();
+    post({ type: 'sim_error', error: String(e.message || e) });
+  }
+}
+
+const CHUNK_FRAMES = 60, CHUNK_PACE = 0.72;
+async function runChunked(t0, token) {
+  const dec = new TextDecoder();
+  let state = null, head = null, buf = null, finished = false;
+  while (!finished) {
+    const body = { run: RUN, grip: +ui.grip.value, chunk_frames: CHUNK_FRAMES, token: SIM_TOKEN };
+    if (state) body.state = state;
+    else {
+      body.probes = picked.map(p => p.ijk);
+      ATTEMPT += 1; window.lastOutcome = null;
+      Object.assign(body, { mode: MODE, participant: PARTICIPANT, session: SESSION, attempt: ATTEMPT,
+        trial: TRIAL, page: PAGE, clicks: picked.map(p => p.point),
+        timing: { place_ms: tPlaceStart === null ? null : Math.round(t0 - tPlaceStart),
+                  first_click_ms: (tPlaceStart === null || tFirstClick === null) ? null : Math.round(tFirstClick - tPlaceStart) } });
+    }
+    const res = await fetch(SIM_CHUNK_URL, { method: 'POST', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error || res.statusText);
+    const reader = res.body.getReader();
+    for await (const { kind, payload } of readChunks(reader)) {
+      if (token !== runToken) { await reader.cancel(); return; }
+      if (kind === 3) throw new Error(JSON.parse(dec.decode(payload)).error);
+      if (kind === 0) {
+        if (!head) {
+          head = JSON.parse(dec.decode(payload));
+          buf = new Float32Array(head.max_frames * nVerts * 3);
+          phase = 'result';
+          src = { raw: buf, n: 0, probes: [], phases: [], phase_names: head.phase_names, streaming: true, pace: CHUNK_PACE };
+          frame = 0; acc = 0;
+        }
+      } else if (kind === 1) {
+        const dv = new DataView(payload.buffer, payload.byteOffset, payload.byteLength);
+        const jlen = dv.getUint32(0, true);
+        const bmeta = JSON.parse(dec.decode(payload.subarray(4, 4 + jlen)));
+        const floats = new Float32Array(payload.buffer, payload.byteOffset + 4 + jlen, bmeta.n * nVerts * 3);
+        const first = src.n === 0;
+        buf.set(floats, bmeta.first * nVerts * 3);
+        for (let i = 0; i < bmeta.n; i++) { src.phases.push(bmeta.phases[i]); src.probes.push(bmeta.probes[i]); }
+        src.n = bmeta.first + bmeta.n;
+        if (first) { setFrame(0); playing = true; }
+      } else if (kind === 2) {
+        const tail = JSON.parse(dec.decode(payload));
+        finished = !!tail.done;
+        state = tail.state || null;
+        if (finished) {
+          if (tail.outcome) window.lastOutcome = tail.outcome;
+          window.lastLogged = tail.logged || null;
+          src.streaming = false; src.pace = 1;
+          src.n = tail.n_frames;
+          if (!tail.finite) ui.status.textContent = 'Simulation error.';
+        }
+      }
+    }
+    if (!head) throw new Error('stream ended before any data');
+  }
+}
+
+// ---------------------------------------------------------------- controls
+ui.go.onclick = runManeuver;
+function paintGrip() {
+  const t = +ui.grip.value, w = ui.grip.getBoundingClientRect().width;
+  ui.griplabel.textContent = `Grip: ${Math.round(t*100)}%`;
+  ui.gripfill.style.width = `${t*100}%`;
+  ui.griphandle.style.left = `${t*w}px`;
+}
+ui.grip.oninput = paintGrip;
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight; camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight); paintGrip();
+});
+// watch: the parent starts all objects of a screen together
+addEventListener('message', e => {
+  if (e.data && e.data.type === 'play' && KIND === 'watch') { setFrame(0); acc = 0; playing = true; }
+});
+
+// automated tests: where the object is on screen (CSS px)
+window.objectOnScreen = () => {
+  geom.computeBoundingSphere();
+  const c = geom.boundingSphere.center.clone().project(camera);
+  return { x: (c.x + 1) / 2 * innerWidth, y: (1 - c.y) / 2 * innerHeight };
+};
+
+// ---------------------------------------------------------------- loop
+setFrame(0);
+setPhase('settle', KIND === 'grasp' ? 'Watch the object fall...' : '');
+refreshProbes(); paintGrip(); shadeFloor();
+post({ type: 'loaded' });
+
+let lastCam = camera.position.clone();
+renderer.setAnimationLoop(() => {
+  const now = performance.now();
+  const dt = (now - last)/1000; last = now;
+  if (playing) {
+    acc += dt * SPEED * (src.pace || 1);
+    while (acc >= meta.frame_dt) {
+      acc -= meta.frame_dt;
+      if (frame + 1 >= src.n) {
+        if (src.streaming) { acc = 0; break; }        // caught up to the sim -- wait for more frames
+        if (KIND === 'watch') post({ type: 'played' });
+        else if (phase === 'result') finishResult();
+        playing = false; break;
+      }
+      setFrame(frame + 1);
+      if (!playing) break;
+    }
+    if (playing && frame + 1 < src.n) setFrame(frame, Math.min(1, acc / meta.frame_dt));
+  }
+  controls.update();
+  if (!camera.position.equals(lastCam)) { shadeFloor(); lastCam.copy(camera.position); }
+  renderer.render(scene, camera);
+});
+</script>
+</body>
+</html>

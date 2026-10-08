@@ -1,0 +1,17 @@
+{
+ "_comment": "grasp condition 2: the 12 stimuli (3 shapes x slouch/soft/middle/hard), one try each (seed 1002)",
+ "condition": [
+  "blob_stim_sphere_slouch",
+  "blob_stim_cube_slouch",
+  "blob_stim_sphere_soft",
+  "blob_stim_beanbag_middle",
+  "blob_stim_beanbag_hard",
+  "blob_stim_sphere_hard",
+  "blob_stim_cube_soft",
+  "blob_stim_cube_middle",
+  "blob_stim_cube_hard",
+  "blob_stim_sphere_middle",
+  "blob_stim_beanbag_soft",
+  "blob_stim_beanbag_slouch"
+ ]
+}

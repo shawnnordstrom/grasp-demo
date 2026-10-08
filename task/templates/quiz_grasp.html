@@ -1,0 +1,80 @@
+<!--
+  <quiz_grasp.html>
+
+  Same structure as cloth-psiturk's quiz_stiffness.html: a #wrapper > .login-form
+  > .questionnaire holding a #prequiz table of <select> questions, checked in
+  task.js. Correct answers: Q1 = c, Q2 = a.
+-->
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <link rel="icon" href="/static/favicon.ico" />
+        <meta http-equiv="pragma" content="no-cache" />
+        <title>Quiz_Grasp</title>
+    </head>
+    <body>
+        <!--WRAPPER-->
+        <div id="wrapper" style="width: 162vmin;">
+            <!--LOGIN FORM-->
+            <div name="login-form" class="login-form">
+                <!--HEADER-->
+                    <div class="header1" stype="padding-left: 100px">
+                        <h1>Quiz</h1>
+                        <!--DESCRIPTION--><span></span><!-- END DESCRIPTION-->
+                    </div>
+                <!--END HEADER-->
+
+                <div class="questionnaire">
+                    <p id="toptext" style="color:black">
+                        Before beginning the experiment, you must answer a few simple questions to ensure that the instructions are clear.
+                        <br>If you do not answer all questions correctly, you will be returned to the start of the instructions.
+                    </p>
+                    <!--Table-->
+                    <table id="prequiz" action="debrief" method="post" style="float: left">
+                        <tr>
+                            <td class="question">
+                                <p class="questiontext1" style="text-align: left">
+                                    Q1. Which of the following statements is <b>false</b>:
+                                    <select id="trueFalse1" name="featureAttend">
+                                        <option value="noresp" SELECTED></option>
+                                        <option value="a">I click on the object to place my fingers.</option>
+                                        <option value="b">Dragging the mouse rotates the view instead of placing a finger.</option>
+                                        <option value="c">The object will always be picked up successfully.</option>
+                                    </select>
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="question">
+                                <p class="questiontext1" style="text-align: left">
+                                    Q2. What marks the place the object should end up?
+                                    <select id="trueFalse2" name="featureAttend">
+                                        <option value="noresp" SELECTED></option>
+                                        <option value="a">The green rectangle on the floor.</option>
+                                        <option value="b">The grid lines on the floor.</option>
+                                        <option value="c">Nothing&mdash;the object can go anywhere.</option>
+                                    </select>
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td>
+                        <div style="float:left; margin-left:29vmin">
+                        <br>
+                            <button type="button" id="nextbutton" class="incenterdiv btn btn-success btn-lg">
+                                Next
+                                <span class="glyphicon glyphicon-arrow-right"></span>
+                            </button>
+                        </div> </td>
+                        </tr>
+
+                    </table> <!--END TABLE-->
+
+                </div> <!--END LOGIN FORM-->
+            </div>
+        </div>
+    </body>
+</html>

@@ -1,0 +1,48 @@
+<!--
+  <stage.html>
+
+  Same skeleton as cloth-psiturk's stage: #full-container wraps a stimulus
+  region (#moviescreen) above a response region (#register) with #qspan for the
+  prompt, #nextbutton and #progress in #centerdiv.
+
+  The one substantive difference is the stimulus: cloth-psiturk drops three
+  prerendered <video> elements into #moviescreen; this drops one <iframe>
+  running the interactive viewer, because half of each trial is simulated live.
+-->
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <link rel="icon" href="/static/favicon.ico" />
+        <meta http-equiv="pragma" content="no-cache" />
+        <title>Experiment</title>
+    </head>
+    <body>
+        <!-- Full-container -->
+        <div id="full-container" class="hide_elements">
+            <br>
+            <!-- Movie Screen -->
+            <div id="moviescreen">
+                <iframe id="trialframe" class="movieobj_loading" title="Grasp trial"
+                        allow="autoplay" referrerpolicy="no-referrer"></iframe>
+            </div>  <!-- END Movie Screen -->
+            <!-- Register -->
+            <div id="register">
+                <div id="response_region">
+                    <div class="radio_option_container">
+                        <span id="qspan"></span>
+                    </div>
+                </div>
+                <hr />
+                <div id="centerdiv">
+                    <button id="nextbutton" class="incenterdiv btn btn-success btn-lg" disabled>
+                        Next
+                        <span class="glyphicon glyphicon-arrow-right"></span>
+                    </button>
+                    <br>
+                    <span id="progress" class="incenterdiv" style="margin-top: 15px;">0/0</span>
+                </div>
+            </div>  <!-- END Register -->
+        </div>  <!-- END Full-container -->
+    </body>
+</html>

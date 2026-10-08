@@ -133,6 +133,24 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const RUN = new URLSearchParams(location.search).get('run') || 'blob_demo';
+// ---- attempt logging: who / which mode (participant | test | demo), sent with each grasp ----
+const _lq = new URLSearchParams(location.search);
+const PARTICIPANT = _lq.get('PROLIFIC_PID') || _lq.get('pid') || _lq.get('who') || null;
+const MODE = ['participant', 'test', 'demo'].includes(_lq.get('mode')) ? _lq.get('mode')
+           : (_lq.get('PROLIFIC_PID') ? 'participant' : 'demo');
+const SESSION = _lq.get('session') || (crypto.randomUUID ? crypto.randomUUID().slice(0, 12)
+                                       : Math.random().toString(36).slice(2, 14));
+const TRIAL = _lq.get('trial') || null;
+let ATTEMPT = 0, tPlaceStart = null, tFirstClick = null;
+// shown when playback reaches Done; participants never see the scoring
+function outcomeText() {
+  const o = window.lastOutcome;
+  if (!o || MODE === 'participant') return null;
+  return (o.held ? (o.carried ? 'Done · HELD and carried' : 'Done · held, dropped in carry') : 'Done · slipped')
+    + ` · rise ${(o.peak_rise * 100).toFixed(0)} cm`
+    + (o.landing_dist != null ? ` · landed ${(o.landing_dist * 100).toFixed(0)} cm from target` : '')
+    + (MODE === 'test' ? '  [test]' : '');
+}
 
 let meta, cfg, settleRaw, nVerts, nodeIJK;
 try {
@@ -358,11 +376,12 @@ function setFrame(i, t) {
   updateMarkers();
   if (phase === 'result' && src.phases) {
     const name = src.phase_names[String(src.phases[frame])] || '';
-    ui.status.textContent = name + (name === 'Done' ? '.' : '...');
+    ui.status.textContent = (name === 'Done' && outcomeText()) || (name + (name === 'Done' ? '.' : '...'));
   }
   if (phase === 'settle' && frame >= src.n - 1) {
     playing = false; ui.play.textContent = 'Play';
     setPhase('place', 'PLACE probes  (click the blob · GO to run)');
+    tPlaceStart = performance.now(); tFirstClick = null;
     refreshProbes();
   }
 }
@@ -440,7 +459,9 @@ renderer.domElement.addEventListener('pointerup', e => {
     if (d < bestD) { bestD = d; best = v; }
   }
   if (picked.some(p => p.vertex === best) || picked.length >= cfg.max_probes) return;
-  picked.push({ vertex: best, ijk: [nodeIJK[best*3], nodeIJK[best*3+1], nodeIJK[best*3+2]] });
+  if (tFirstClick === null) tFirstClick = performance.now();
+  picked.push({ vertex: best, ijk: [nodeIJK[best*3], nodeIJK[best*3+1], nodeIJK[best*3+2]],
+                point: [+hit.point.x.toFixed(5), +hit.point.y.toFixed(5), +hit.point.z.toFixed(5)] });
   refreshProbes(); updateMarkers();
 });
 
@@ -475,7 +496,14 @@ async function runChunked(t0, token) {
     const body = { run: RUN, grip: +ui.grip.value, chunk_frames: CHUNK_FRAMES,
                    token: SIM_TOKEN };
     if (state) body.state = state;
-    else body.probes = picked.map(p => p.ijk);
+    else {
+      body.probes = picked.map(p => p.ijk);
+      ATTEMPT += 1; window.lastOutcome = null;
+      Object.assign(body, { mode: MODE, participant: PARTICIPANT, session: SESSION, attempt: ATTEMPT,
+        trial: TRIAL, page: 'grasp-demo', clicks: picked.map(p => p.point),
+        timing: { place_ms: tPlaceStart === null ? null : Math.round(t0 - tPlaceStart),
+                  first_click_ms: (tPlaceStart === null || tFirstClick === null) ? null : Math.round(tFirstClick - tPlaceStart) } });
+    }
     const res = await fetch(SIM_CHUNK_URL, { method: 'POST', body: JSON.stringify(body) });
     if (!res.ok) {
       if (!head && (res.status === 403 || res.status === 404 || res.status === 405))
@@ -526,6 +554,10 @@ async function runChunked(t0, token) {
           console.log(`chunked sim done · first frames in ${tFirst | 0} ms · `
                       + `round trip ${(performance.now() - t0) | 0} ms`);
           if (!tail.finite) setPhase('result', 'Result contains NON-FINITE values');
+          if (tail.outcome) {
+            window.lastOutcome = tail.outcome;
+            console.log('outcome', tail.outcome, 'logged', tail.logged);
+          }
         }
       }
     }

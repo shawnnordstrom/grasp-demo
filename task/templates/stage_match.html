@@ -1,0 +1,57 @@
+<!--
+  <stage_match.html>
+
+  Same skeleton as stage.html (#full-container > #moviescreen above #register, #qspan,
+  #nextbutton, #progress) for the match-to-sample judgment. Like cloth-psiturk's stage it
+  shows three stimuli and collects a radio response; here each stimulus is a viewer iframe
+  playing a prerecorded fall (sample on top, choices A and B below).
+-->
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <link rel="icon" href="static/favicon.ico" />
+        <meta http-equiv="pragma" content="no-cache" />
+        <title>Experiment</title>
+    </head>
+    <body>
+        <!-- Full-container -->
+        <div id="full-container" class="hide_elements">
+            <br>
+            <!-- Movie Screen -->
+            <div id="moviescreen">
+                <div class="mts-sample">
+                    <iframe id="frameS" class="mtsframe" title="Top object"></iframe>
+                </div>
+                <div class="mts-choices">
+                    <div><iframe id="frameA" class="mtsframe" title="Object A"></iframe><div class="mts-label">A</div></div>
+                    <div><iframe id="frameB" class="mtsframe" title="Object B"></iframe><div class="mts-label">B</div></div>
+                </div>
+            </div>  <!-- END Movie Screen -->
+            <!-- Register -->
+            <div id="register">
+                <div id="response_region">
+                    <div class="radio_option_container">
+                        <span id="qspan"></span><br>
+                        <label class="radio"><input type="radio" name="mts" value="A" disabled><span class="outer"><span class="inner"></span></span>A</label>
+                        <label class="radio"><input type="radio" name="mts" value="B" disabled><span class="outer"><span class="inner"></span></span>B</label>
+                    </div>
+                </div>
+                <hr />
+                <div id="centerdiv">
+                    <button id="replaybutton" class="incenterdiv btn btn-default btn-lg" disabled>
+                        <span class="glyphicon glyphicon-repeat"></span>
+                        Replay
+                    </button>
+                    &nbsp;
+                    <button id="nextbutton" class="incenterdiv btn btn-success btn-lg" disabled>
+                        Next
+                        <span class="glyphicon glyphicon-arrow-right"></span>
+                    </button>
+                    <br>
+                    <span id="progress" class="incenterdiv" style="margin-top: 15px;">0/0</span>
+                </div>
+            </div>  <!-- END Register -->
+        </div>  <!-- END Full-container -->
+    </body>
+</html>

@@ -1,0 +1,59 @@
+{
+ "_comment": "watch condition 3: match-to-sample per grid cell; sample = blob_grid_<cell> on the flat floor, match and foil = mts_<cell>_<floor>_<match|softer|harder>",
+ "condition": [
+  {
+   "cell": "cube_soft",
+   "floor": "ridges",
+   "foil": "softer",
+   "match_side": "A"
+  },
+  {
+   "cell": "sphere_soft",
+   "floor": "checker",
+   "foil": "softer",
+   "match_side": "B"
+  },
+  {
+   "cell": "sphere_middle",
+   "floor": "pillars",
+   "foil": "harder",
+   "match_side": "A"
+  },
+  {
+   "cell": "beanbag_soft",
+   "floor": "pillars",
+   "foil": "softer",
+   "match_side": "B"
+  },
+  {
+   "cell": "beanbag_middle",
+   "floor": "bumpy",
+   "foil": "harder",
+   "match_side": "B"
+  },
+  {
+   "cell": "sphere_hard",
+   "floor": "bumpy",
+   "foil": "harder",
+   "match_side": "A"
+  },
+  {
+   "cell": "beanbag_hard",
+   "floor": "ridges",
+   "foil": "harder",
+   "match_side": "A"
+  },
+  {
+   "cell": "cube_middle",
+   "floor": "checker",
+   "foil": "softer",
+   "match_side": "A"
+  },
+  {
+   "cell": "cube_hard",
+   "floor": "pillars",
+   "foil": "softer",
+   "match_side": "B"
+  }
+ ]
+}
