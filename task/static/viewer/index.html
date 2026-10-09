@@ -279,7 +279,6 @@ function setFrame(i, t) {
   if (phase === 'result' && src.phases) {
     const name = src.phase_names[String(src.phases[frame])] || '';
     ui.status.textContent = name + (name === 'Done' ? '.' : '...');
-    if (name === 'Done' && !src.streaming) finishResult();
   }
   if (KIND === 'grasp' && phase === 'settle' && frame >= src.n - 1) {
     playing = false;
