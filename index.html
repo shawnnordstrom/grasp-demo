@@ -133,7 +133,6 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const RUN = new URLSearchParams(location.search).get('run') || 'blob_demo';
-// ---- attempt logging: who / which mode (participant | test | demo), sent with each grasp ----
 const _lq = new URLSearchParams(location.search);
 const PARTICIPANT = _lq.get('PROLIFIC_PID') || _lq.get('pid') || _lq.get('who') || null;
 const MODE = ['participant', 'test', 'demo'].includes(_lq.get('mode')) ? _lq.get('mode')
@@ -142,7 +141,6 @@ const SESSION = _lq.get('session') || (crypto.randomUUID ? crypto.randomUUID().s
                                        : Math.random().toString(36).slice(2, 14));
 const TRIAL = _lq.get('trial') || null;
 let ATTEMPT = 0, tPlaceStart = null, tFirstClick = null;
-// shown when playback reaches Done; participants never see the scoring
 function outcomeText() {
   const o = window.lastOutcome;
   if (!o || MODE === 'participant') return null;
@@ -235,7 +233,7 @@ function shadeFloor() {
   for (let s = 0; s < nSeg; s++) {
     _mid.set((floorPos[s*6]+floorPos[s*6+3])/2, (floorPos[s*6+1]+floorPos[s*6+4])/2,
              (floorPos[s*6+2]+floorPos[s*6+5])/2);
-    const d = -_mid.distanceTo(camera.position);   // closer to camera = "near"
+    const d = -_mid.distanceTo(camera.position);
     segDepth[s] = d;
     if (d < dmin) dmin = d;
     if (d > dmax) dmax = d;
@@ -248,7 +246,6 @@ function shadeFloor() {
   floorGeo.attributes.color.needsUpdate = true;
 }
 
-// ------------------------------------------- landing zone (render.py's target quad)
 const tc = new Float32Array(meta.target_corners);
 const zoneGeo = new THREE.BufferGeometry();
 zoneGeo.setAttribute('position', new THREE.BufferAttribute(tc, 3));
@@ -259,7 +256,6 @@ const loopPts = [0,1,2,3,0].map(i => new THREE.Vector3(tc[i*3], tc[i*3+1], tc[i*
 scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(loopPts),
   new THREE.LineBasicMaterial({ color: cfg.target_edge_color })));
 
-// ---------------------------------------------------------------- blob
 const faces = new Uint32Array(meta.faces);
 const geom = new THREE.BufferGeometry();
 const positions = new Float32Array(nVerts * 3);
@@ -285,7 +281,6 @@ const markerMat = new THREE.MeshBasicMaterial({ color: cfg.probe_color });
 const markers = new THREE.Group();
 scene.add(markers);
 
-// ------------------------------------------- neighbours (Laplacian relaxation)
 const { nbrStart, nbrList } = (() => {
   const sets = Array.from({ length: nVerts }, () => new Set());
   for (let t = 0; t < faces.length; t += 3) {
@@ -314,9 +309,6 @@ function relaxPass(arr, lambda) {
     }
     arr.set(scratch);
 }
-// Taubin smoothing: a lambda pass then a mu pass (mu < -lambda) per iteration.
-// Plain Laplacian (mu = 0) shrinks the mesh; the physics contacts this exact
-// smoothed surface (core CONTACT_RELAX_*), so keep relax_mu equal to it.
 function relax(arr, iters, lambda, mu) {
   for (let it = 0; it < iters; it++) {
     relaxPass(arr, lambda);
@@ -324,7 +316,6 @@ function relax(arr, iters, lambda, mu) {
   }
 }
 
-// ---------------------------------------------------------------- state
 const $ = id => document.getElementById(id);
 const ui = {
   status: $('status'), probes: $('probes'), go: $('go'), grip: $('grip'),
@@ -339,7 +330,7 @@ ui.flat.checked = cfg.material_flat_shading;
 ui.speedv.textContent = `${(+ui.speed.value).toFixed(2)}x`;
 ui.smoothv.textContent = `physics (${ui.smooth.value})`;
 
-let phase = 'settle';                 // settle | place | sim | result
+let phase = 'settle';
 let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
 let frame = 0, playing = true, acc = 0, last = performance.now();
 let picked = [];
@@ -411,7 +402,6 @@ function setSource(raw, n, probes, phases, phaseNames) {
   setFrame(0);
 }
 
-// ---------------------------------------------------------------- chunk reader
 async function* readChunks(reader) {
   let buf = new Uint8Array(0);
   for (;;) {
@@ -435,7 +425,6 @@ function refreshProbes() {
   ui.go.disabled = !(phase === 'place' && picked.length > 0);
 }
 
-// ---------------------------------------------------------------- picking
 const ray = new THREE.Raycaster(), ndc = new THREE.Vector2();
 let downAt = null;
 renderer.domElement.addEventListener('pointerdown', e => {
@@ -446,7 +435,7 @@ renderer.domElement.addEventListener('pointerup', e => {
   const moved = Math.hypot(e.clientX - downAt.x, e.clientY - downAt.y);
   const quick = performance.now() - downAt.t < 400;
   downAt = null;
-  if (phase !== 'place' || moved > 4 || !quick) return;   // it was an orbit drag
+  if (phase !== 'place' || moved > 4 || !quick) return;
   ndc.x = (e.clientX/innerWidth)*2 - 1;
   ndc.y = -(e.clientY/innerHeight)*2 + 1;
   ray.setFromCamera(ndc, camera);
@@ -465,7 +454,6 @@ renderer.domElement.addEventListener('pointerup', e => {
   refreshProbes(); updateMarkers();
 });
 
-// ---------------------------------------------------------------- server call
 async function runManeuver() {
   setPhase('sim', 'Simulating on the server... (0.000s)');
   ui.go.disabled = true;
@@ -616,7 +604,6 @@ async function runSingle(t0, token) {
     if (!head) throw new Error('stream ended before any data');
 }
 
-// ---------------------------------------------------------------- controls
 ui.go.onclick = runManeuver;
 ui.clear.onclick = () => {
   runToken++;
@@ -648,7 +635,6 @@ addEventListener('resize', () => {
   renderer.setSize(innerWidth, innerHeight);
 });
 
-// ---------------------------------------------------------------- loop
 setSource(settleRaw, meta.n_frames, null, null, null);
 setPhase('settle', 'Settling...');
 refreshProbes(); paintGrip(); shadeFloor();
@@ -662,7 +648,7 @@ renderer.setAnimationLoop(() => {
     while (acc >= meta.frame_dt) {
       acc -= meta.frame_dt;
       if (frame + 1 >= src.n) {
-        if (src.streaming) {            // caught up to the sim -- hold, don't loop
+        if (src.streaming) {
           acc = 0;
           ui.status.textContent = (src.phase_names[String(src.phases[frame])] || '')
             + '... (buffering)';
@@ -682,19 +668,11 @@ renderer.setAnimationLoop(() => {
 </script>
 </body>
 </html><script>
-// Live sim backend (AWS Lambda). The token is a rate-limiting speed bump by
-// design -- it ships in this file; real cost ceilings are the per-IP rate
-// limit and the account concurrency cap on the function itself.
-// ?api=<origin> points the live sim elsewhere (local preview: ?api= with an empty
-// value means same-origin, i.e. the sim server that is also serving this page).
 const _q = new URLSearchParams(location.search);
 const API = _q.has('api') ? _q.get('api').replace(/\/+$/, '')
                           : 'https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com';
 const SIM_URL = API + '/simulate';
 const SIM_CHUNK_URL = API + '/simulate_chunk';
-// wake the sim backend the moment the page opens: its ~5s cold init runs
-// while the visitor watches the settle and places probes, so the first
-// grasp lands on a warm container (fire-and-forget; response unread)
 fetch(API + '/healthz',
       { mode: 'no-cors', cache: 'no-store' }).catch(() => {});  // AWS backend (CORS-enabled)
 const SIM_TOKEN = '2ipvFHPifLffuihBhY7KQIU5dK-7ixfe';
