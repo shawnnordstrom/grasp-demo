@@ -23,7 +23,8 @@
  *   go              participant committed; the sim request goes out
  *   grasp_done      maneuver finished playing -- carries outcome, clicks, lattice sites
  *   sim_error       the sim request failed; the viewer lets the participant press GO again
- *   played          a watch viewer finished its first full fall
+ *   unlock          a watch viewer reached UNLOCK_S seconds of simulation, or ended sooner
+ *   played          a watch viewer finished a full fall
  *   error           the object could not load
  *
  * Two ways to run it:
@@ -51,6 +52,7 @@ var DATA_BASE = "../data";       // blobs + web_config.json, relative to the vie
 var VIEWER = "static/viewer/index.html";
 var N_CONDITIONS = 6;            // condlist_<task>_<k>.json, k = 0..N-1
 var PRACTICE_RUN = "blob_demo";
+var UNLOCK_S = 4;               // A/B screen: seconds of simulation before answering (10 s on screen)
 var STIM_PREFIX = "blob_stim_";  // + <shape>_<material>: recorded until the object comes to rest
 var GRIP = Q.get("grip");        // null = the viewer's default (0.5); the slider is hidden
 var SHOW_GRIP = Q.get("showgrip") === "1";
@@ -230,7 +232,7 @@ var GraspScreen = function(opts, onDone) {
             function(m) {
                 switch (m.type) {
                 case "ready_to_place": setPrompt("Click the object to place your fingers, then press GO."); break;
-                case "go":             setPrompt("Lifting&hellip;"); break;
+                case "go":             setPrompt("Watch what happens&hellip;"); break;
                 case "sim_error":      setPrompt("Connection problem. Press GO to try again."); break;
                 case "error":
                     last = { error: "could not load" };
@@ -267,8 +269,9 @@ var GraspScreen = function(opts, onDone) {
  * MATCH SCREEN     *
  ********************/
 // stage_match.html: sample (blob_stim_ recording, flat floor) on top, match and foil (same uneven
-// floor) as A / B. The three falls start together and play once; the answer unlocks once all
-// have played. Replay restarts all three together (counted).
+// floor) as A / B. The three falls start together and play to the end. The answer and Replay
+// unlock once every clip has played UNLOCK_S seconds of simulation or ended, whichever is first;
+// Replay restarts all three together (counted) and unlocks again on the same rule.
 var MatchScreen = function(item, progress, onDone) {
     psiTurk.showPage("stage_match.html");
     $("#" + FULL_CONTAINER).removeClass("hide_elements");
@@ -279,12 +282,12 @@ var MatchScreen = function(item, progress, onDone) {
                  foil: "mts_" + item.cell + "_" + item.floor + "_" + item.foil };
     var sides = item.match_side === "A" ? { A: "match", B: "foil" } : { A: "foil", B: "match" };
     var frames = { S: runs.S, A: runs[sides.A], B: runs[sides.B] };
-    var loaded = {}, played = {}, tEnabled = null, replays = 0;
+    var loaded = {}, unlocked = {}, tEnabled = null, replays = 0;
     var next = $("#" + NEXTBUTTON).prop("disabled", true);
     var replay = $("#replaybutton").prop("disabled", true);
 
     function playAll() {
-        played = {};
+        unlocked = {};
         replay.prop("disabled", true);
         $.each(frames, function(k) {
             document.getElementById("frame" + k).contentWindow.postMessage({ type: "play" }, "*");
@@ -294,16 +297,16 @@ var MatchScreen = function(item, progress, onDone) {
 
     function count(o) { return Object.keys(o).length; }
     $.each(frames, function(key, run) {
-        loadFrame(document.getElementById("frame" + key), viewerURL({ kind: "watch", run: run }), function(m) {
+        loadFrame(document.getElementById("frame" + key), viewerURL({ kind: "watch", run: run, unlock: UNLOCK_S }), function(m) {
             if (m.type === "loaded") {
                 loaded[key] = true;
                 if (count(loaded) === 3) {
                     $("#" + TRIAL_INST).html("Watch all three objects&hellip;");
                     playAll();
                 }
-            } else if (m.type === "played") {
-                played[key] = true;
-                if (count(played) < 3) return;
+            } else if (m.type === "unlock") {
+                unlocked[key] = true;
+                if (count(unlocked) < 3) return;
                 replay.prop("disabled", false);
                 if (tEnabled === null) {
                     tEnabled = Date.now();

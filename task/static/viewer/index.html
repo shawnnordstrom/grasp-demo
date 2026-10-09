@@ -10,8 +10,9 @@
   contact surface, same chunked live sim.
     kind=grasp  watch it fall, place 1-5 fingers, GO once; posts {type:'grasp_done'} to the parent
     kind=watch  play the fall once and hold the last frame; no interaction; each {type:'play'} from
-                the parent (re)starts it, and {type:'played'} is posted at the end of every play
-  Messages to the parent: loaded, ready_to_place, go, grasp_done, sim_error, played, error.
+                the parent (re)starts it; {type:'unlock'} is posted when a play reaches `unlock`
+                seconds of simulation (default 4) or ends sooner, {type:'played'} when it ends
+  Messages to the parent: loaded, ready_to_place, go, grasp_done, sim_error, unlock, played, error.
   Params: run, base (folder of the blob and web_config.json, default ../data), kind, mode, pid,
           session, trial, page, attempt0, grip (fixed squeeze, default 0.5), showgrip=1 (slider
           visible), feedback=none|simple|full, api (sim origin; absent = the deployed Lambda)
@@ -92,6 +93,7 @@ const PAGE = q.get('page') || 'psiturk';
 const FEEDBACK = q.get('feedback') || 'none';
 const GRIP = Math.min(1, Math.max(0, parseFloat(q.get('grip') ?? '0.5')));
 const SHOW_GRIP = q.get('showgrip') === '1';
+const UNLOCK_S = parseFloat(q.get('unlock') ?? '4');   // watch: seconds of simulation before the answer unlocks
 let ATTEMPT = parseInt(q.get('attempt0') || '0', 10), tPlaceStart = null, tFirstClick = null;
 const post = msg => parent !== window && parent.postMessage(Object.assign({ trial: TRIAL, run: RUN }, msg), '*');
 if (KIND === 'watch') document.body.classList.add('watch');
@@ -126,14 +128,17 @@ const camera = new THREE.PerspectiveCamera(cfg.camera_fov, innerWidth/innerHeigh
 camera.up.set(0, 0, 1);
 const az = THREE.MathUtils.degToRad(cfg.camera_azimuth), el_ = THREE.MathUtils.degToRad(cfg.camera_elevation);
 // Same camera distance for every object, so size on screen is comparable across trials (the demo
-// frames the whole bounce, which leaves bouncy objects tiny). watch: aimed at where the object
-// comes to rest (on bumpy floors it rolls away from the centre); grasp: halfway between the
-// resting object and the green square, so the carry stays in view.
-const L = (meta.n_frames - 1) * nVerts * 3;
-let cx = 0, cy = 0;
-for (let v = 0; v < nVerts; v++) { cx += settleRaw[L + v*3]; cy += settleRaw[L + v*3 + 1]; }
-cx /= nVerts; cy /= nVerts;
-if (KIND === 'grasp' && meta.target_xy) { cx = (cx + meta.target_xy[0]) / 2; cy = (cy + meta.target_xy[1]) / 2; }
+// frames the whole bounce, which leaves bouncy objects tiny). watch: aimed halfway between where
+// the object is dropped and where it comes to rest (on uneven floors it can roll away); grasp:
+// halfway between the resting object and the green square, so the carry stays in view.
+function centroidXY(f) {
+  const o = f * nVerts * 3; let x = 0, y = 0;
+  for (let v = 0; v < nVerts; v++) { x += settleRaw[o + v*3]; y += settleRaw[o + v*3 + 1]; }
+  return [x / nVerts, y / nVerts];
+}
+let [cx, cy] = centroidXY(meta.n_frames - 1);
+const other = KIND === 'grasp' ? meta.target_xy : centroidXY(0);
+if (other) { cx = (cx + other[0]) / 2; cy = (cy + other[1]) / 2; }
 const dist = (KIND === 'watch' ? 0.55 : 0.62) * cfg.camera_distance;
 camera.position.set(cx + dist * Math.cos(el_) * Math.sin(az), cy - dist * Math.cos(el_) * Math.cos(az),
                     cfg.camera_target_z + dist * Math.sin(el_));
@@ -243,7 +248,7 @@ const SPEED = cfg.default_speed;
 let phase = 'settle';                 // settle | place | sim | result | done
 let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
 let frame = 0, playing = KIND === 'grasp', acc = 0, last = performance.now();
-let picked = [], runToken = 0;
+let picked = [], runToken = 0, unlockSent = false;
 
 function setPhase(p, msg) {
   phase = p;
@@ -277,8 +282,10 @@ function setFrame(i, t) {
   geom.computeVertexNormals(); geom.computeBoundingSphere();
   updateMarkers();
   if (phase === 'result' && src.phases) {
+    // after release the object is still settling; "Done." waits for the end of the replay,
+    // the moment the page unlocks Next (finishResult)
     const name = src.phase_names[String(src.phases[frame])] || '';
-    ui.status.textContent = name + (name === 'Done' ? '.' : '...');
+    ui.status.textContent = (name === 'Done' ? 'Settling' : name) + '...';
   }
   if (KIND === 'grasp' && phase === 'settle' && frame >= src.n - 1) {
     playing = false;
@@ -293,6 +300,7 @@ function finishResult() {
   if (phase !== 'result') return;
   phase = 'done';
   playing = false;
+  ui.status.textContent = 'Done.';
   const f = outcomeFeedback(window.lastOutcome);
   if (f) { ui.fb.textContent = f[0]; ui.fb.style.color = f[1]; ui.fb.style.display = 'block'; }
   post({ type: 'grasp_done', outcome: window.lastOutcome || null, logged: window.lastLogged || null,
@@ -452,7 +460,7 @@ addEventListener('resize', () => {
 });
 // watch: the parent starts all objects of a screen together
 addEventListener('message', e => {
-  if (e.data && e.data.type === 'play' && KIND === 'watch') { setFrame(0); acc = 0; playing = true; }
+  if (e.data && e.data.type === 'play' && KIND === 'watch') { setFrame(0); acc = 0; playing = true; unlockSent = false; }
 });
 
 // automated tests: where the object is on screen (CSS px)
@@ -478,11 +486,17 @@ renderer.setAnimationLoop(() => {
       acc -= meta.frame_dt;
       if (frame + 1 >= src.n) {
         if (src.streaming) { acc = 0; break; }        // caught up to the sim -- wait for more frames
-        if (KIND === 'watch') post({ type: 'played' });
+        if (KIND === 'watch') {
+          if (!unlockSent) { unlockSent = true; post({ type: 'unlock' }); }
+          post({ type: 'played' });
+        }
         else if (phase === 'result') finishResult();
         playing = false; break;
       }
       setFrame(frame + 1);
+      if (KIND === 'watch' && !unlockSent && frame * meta.frame_dt >= UNLOCK_S) {
+        unlockSent = true; post({ type: 'unlock' });
+      }
       if (!playing) break;
     }
     if (playing && frame + 1 < src.n) setFrame(frame, Math.min(1, acc / meta.frame_dt));
