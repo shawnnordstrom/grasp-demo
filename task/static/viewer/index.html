@@ -93,6 +93,8 @@ const PAGE = q.get('page') || 'psiturk';
 const FEEDBACK = q.get('feedback') || 'none';
 const GRIP = Math.min(1, Math.max(0, parseFloat(q.get('grip') ?? '0.5')));
 const SHOW_GRIP = q.get('showgrip') === '1';
+const CONTACT = q.get('terms') === 'contact';   // label the clicks "contact points" instead of "fingers"
+const TERM = CONTACT ? 'contact point' : 'finger', TERMS = CONTACT ? 'contact points' : 'fingers';
 const UNLOCK_S = parseFloat(q.get('unlock') ?? '4');   // watch: seconds of simulation before the answer unlocks
 let ATTEMPT = parseInt(q.get('attempt0') || '0', 10), tPlaceStart = null, tFirstClick = null;
 const post = msg => parent !== window && parent.postMessage(Object.assign({ trial: TRIAL, run: RUN }, msg), '*');
@@ -146,6 +148,8 @@ const controls = new OrbitControls(camera, renderer.domElement);
 controls.target.set(cx, cy, cfg.camera_target_z);
 controls.enableDamping = true; controls.dampingFactor = 0.08;
 controls.enabled = KIND === 'grasp';
+controls.enablePan = false;                       // rotate and zoom only; panning loses the object
+controls.minDistance = 0.35 * dist; controls.maxDistance = 1.8 * dist;
 controls.update();
 
 const key = new THREE.DirectionalLight(cfg.key_light_color, cfg.key_light_intensity);
@@ -243,6 +247,7 @@ const $ = id => document.getElementById(id);
 const ui = { status: $('status'), probes: $('probes'), go: $('go'), grip: $('grip'), undo: $('undo'),
   griplabel: $('griplabel'), gripfill: $('gripfill'), griphandle: $('griphandle'), fb: $('fb') };
 ui.grip.value = String(GRIP);
+ui.undo.textContent = `undo ${TERM}`;
 const SPEED = cfg.default_speed;
 
 let phase = 'settle';                 // settle | place | sim | result | done
@@ -262,12 +267,31 @@ function setPhase(p, msg) {
   ui.griplabel.style.display = gripVis; $('gripwrap').style.display = gripVis;
 }
 
-function outcomeFeedback(o) {
+// Did the object's centre come to rest inside the green rectangle? (Its whole footprint can't:
+// the rectangle is drawn at the object's own resting size.)
+function centreInTarget() {
+  if (!meta.target_corners || !src.raw || src.n < 1) return null;
+  const o = (src.n - 1) * nVerts * 3; let x = 0, y = 0;
+  for (let v = 0; v < nVerts; v++) { x += src.raw[o + v*3]; y += src.raw[o + v*3 + 1]; }
+  x /= nVerts; y /= nVerts;
+  const c = meta.target_corners; let inside = false;
+  for (let i = 0, j = 3; i < 4; j = i++) {
+    const xi = c[i*3], yi = c[i*3+1], xj = c[j*3], yj = c[j*3+1];
+    if ((yi > y) !== (yj > y) && x < (xj - xi) * (y - yi) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+function outcomeFeedback(o, inTarget) {
   if (!o || FEEDBACK === 'none') return null;
-  if (FEEDBACK === 'simple') return o.held ? ['You lifted it!', '#3BE38B'] : ['It slipped.', '#e0a05f'];
+  if (FEEDBACK === 'simple') {
+    if (!o.held || !o.carried) return ['It slipped.', '#e0a05f'];
+    return inTarget === false ? ['It landed outside the green rectangle.', '#e0a05f'] : ['You lifted it!', '#3BE38B'];
+  }
   return [(o.held ? (o.carried ? 'held and carried' : 'held, dropped in carry') : 'slipped')
           + ` · rise ${(o.peak_rise * 100).toFixed(0)} cm`
-          + (o.landing_dist != null ? ` · ${(o.landing_dist * 100).toFixed(0)} cm from target` : ''), '#ccc'];
+          + (o.landing_dist != null ? ` · ${(o.landing_dist * 100).toFixed(0)} cm from target` : '')
+          + (inTarget === false ? ' · outside the rectangle' : ''), '#ccc'];
 }
 
 function setFrame(i, t) {
@@ -289,7 +313,7 @@ function setFrame(i, t) {
   }
   if (KIND === 'grasp' && phase === 'settle' && frame >= src.n - 1) {
     playing = false;
-    setPhase('place', 'Click the object to place fingers, then press GO.');
+    setPhase('place', `Click the object to place ${TERMS}, then press GO.`);
     tPlaceStart = performance.now(); tFirstClick = null;
     refreshProbes();
     post({ type: 'ready_to_place' });
@@ -301,9 +325,10 @@ function finishResult() {
   phase = 'done';
   playing = false;
   ui.status.textContent = 'Done.';
-  const f = outcomeFeedback(window.lastOutcome);
+  const inTarget = centreInTarget();
+  const f = outcomeFeedback(window.lastOutcome, inTarget);
   if (f) { ui.fb.textContent = f[0]; ui.fb.style.color = f[1]; ui.fb.style.display = 'block'; }
-  post({ type: 'grasp_done', outcome: window.lastOutcome || null, logged: window.lastLogged || null,
+  post({ type: 'grasp_done', outcome: window.lastOutcome || null, in_target: inTarget, logged: window.lastLogged || null,
          n_fingers: picked.length, clicks: picked.map(p => p.point), probes: picked.map(p => p.ijk),
          grip: +ui.grip.value });
 }
@@ -322,7 +347,7 @@ function updateMarkers() {
 }
 
 function refreshProbes() {
-  ui.probes.textContent = phase === 'place' ? `Fingers: ${picked.length} of ${cfg.max_probes}` : '';
+  ui.probes.textContent = phase === 'place' ? `${CONTACT ? 'Contact points' : 'Fingers'}: ${picked.length} of ${cfg.max_probes}` : '';
   ui.go.disabled = !(phase === 'place' && picked.length > 0);
   ui.undo.style.display = (phase === 'place' && picked.length) ? 'block' : 'none';
 }

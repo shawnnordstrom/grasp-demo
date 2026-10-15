@@ -21,7 +21,7 @@
  *   loaded          the object is ready (watch viewers then wait for {type:'play'})
  *   ready_to_place  settle finished; the participant may click the object
  *   go              participant committed; the sim request goes out
- *   grasp_done      maneuver finished playing -- carries outcome, clicks, lattice sites
+ *   grasp_done      maneuver finished playing -- carries outcome, in_target, clicks, lattice sites
  *   sim_error       the sim request failed; the viewer lets the participant press GO again
  *   unlock          a watch viewer reached UNLOCK_S seconds of simulation, or ended sooner
  *   played          a watch viewer finished a full fall
@@ -50,7 +50,7 @@ var TASK = window.TASK || Q.get("task") || "grasp";
 if (["grasp", "judge", "watch"].indexOf(TASK) < 0) TASK = "grasp";
 var DATA_BASE = "../data";       // blobs + web_config.json, relative to the viewer document
 var VIEWER = "static/viewer/index.html";
-var N_CONDITIONS = 6;            // condlist_<task>_<k>.json, k = 0..N-1
+var N_CONDITIONS = { grasp: 12, judge: 6, watch: 6 }[TASK];   // condlist_<task>_<k>.json, k = 0..N-1
 var PRACTICE_RUN = "blob_demo";
 var UNLOCK_S = 4;               // A/B screen: seconds of simulation before answering (10 s on screen)
 var STIM_PREFIX = "blob_stim_";  // + <shape>_<material>: recorded until the object comes to rest
@@ -79,7 +79,8 @@ var CONDITION = Q.has("condition") ? parseInt(Q.get("condition"), 10)
 
 var INSTRUCT_SEQ = {
     grasp: ["instructions_grasp/instruct-1.html", "instructions_grasp/instruct-2.html",
-            "instructions_grasp/instruct-3.html"],
+            "instructions_grasp/instruct-3.html", "instructions_grasp/instruct-4.html",
+            "instructions_grasp/instruct-5.html", "instructions_grasp/instruct-6.html"],
     judge: ["instructions_judge/instruct-1.html", "instructions_judge/instruct-2.html",
             "instructions_judge/instruct-3.html", "instructions_judge/instruct-4.html"],
     watch: ["instructions_watch/instruct-1.html", "instructions_watch/instruct-2.html"],
@@ -88,8 +89,14 @@ var QUIZ_PAGE = "quiz_" + TASK + ".html";
 var QUIZ_ANSWERS = { trueFalse1: "c", trueFalse2: "a" };    // same keys in all three quizzes
 
 // ---- all pages to be loaded ----------------------------------------------
+// grasp: its own page before practice and its own "ready" page (the contact-point wording)
+var PRACTICE_PAGE = TASK === "grasp" ? "instructions_grasp/practice.html" : null;
+var READY_PAGE = TASK === "grasp" ? "instructions_grasp/ready.html" : "ready.html";
+// what the participant places: "contact points" in the grasp task, "fingers" in the judge task
+var CONTACT_TERMS = TASK === "grasp";
 var pages = ["instructions_" + TASK + "/instructions.html"].concat(INSTRUCT_SEQ,
-    [QUIZ_PAGE, "ready.html", "stage.html", "stage_match.html", "postquestionnaire.html"]);
+    [QUIZ_PAGE, READY_PAGE, "stage.html", "stage_match.html", "postquestionnaire.html"]);
+if (PRACTICE_PAGE) pages.push(PRACTICE_PAGE);
 if (STATIC_SITE) pages.push("consent.html", "complete.html");
 psiTurk.preloadPages(pages);
 
@@ -108,6 +115,7 @@ function viewerURL(p) {
     if (SIM_API !== null) u.set("api", SIM_API);
     if (GRIP !== null) u.set("grip", GRIP);
     if (SHOW_GRIP) u.set("showgrip", "1");
+    if (CONTACT_TERMS) u.set("terms", "contact");
     $.each(p, function(k, v) { u.set(k, v); });
     return VIEWER + "?" + u.toString();
 }
@@ -231,7 +239,8 @@ var GraspScreen = function(opts, onDone) {
                                      attempt0: tries }),
             function(m) {
                 switch (m.type) {
-                case "ready_to_place": setPrompt("Click the object to place your fingers, then press GO."); break;
+                case "ready_to_place": setPrompt("Click the object to place your " + (CONTACT_TERMS ? "contact points" : "fingers")
+                                                 + ", then press GO."); break;
                 case "go":             setPrompt("Watch what happens&hellip;"); break;
                 case "sim_error":      setPrompt("Connection problem. Press GO to try again."); break;
                 case "error":
@@ -258,7 +267,7 @@ var GraspScreen = function(opts, onDone) {
         onDone({
             run: opts.run, tries: tries, screen_ms: Date.now() - t0,
             n_fingers: m.n_fingers, probes_ijk: m.probes, clicks: m.clicks, grip: m.grip,
-            outcome: m.outcome || null, logged: m.logged || null, error: m.error,
+            outcome: m.outcome || null, in_target: m.in_target, logged: m.logged || null, error: m.error,
         });
     });
     mount();
@@ -372,15 +381,21 @@ var Experiment = function(triallist, onDone) {
     startTrial();
 };
 
-// Grasp practice on an object that is not one of the stimuli; then the "ready" page.
+// Grasp practice on an object that is not one of the stimuli (grasp task: introduced by its
+// own page after the quiz); then the "ready" page.
 var Practice = function(onDone) {
     if (TASK === "watch") { onDone(); return; }
-    GraspScreen({ run: PRACTICE_RUN, trialId: TASK + "-practice", progress: "practice", practice: true },
-        function(row) {
-            psiTurk.recordTrialData($.extend({ phase: "PRACTICE", IsInstruction: true, task: TASK }, row));
-            psiTurk.showPage("ready.html");
-            $("#" + NEXTBUTTON).click(onDone);
-        });
+    function practice() {
+        GraspScreen({ run: PRACTICE_RUN, trialId: TASK + "-practice", progress: "practice", practice: true },
+            function(row) {
+                psiTurk.recordTrialData($.extend({ phase: "PRACTICE", IsInstruction: true, task: TASK }, row));
+                psiTurk.showPage(READY_PAGE);
+                $("#" + NEXTBUTTON).click(onDone);
+            });
+    }
+    if (!PRACTICE_PAGE) { practice(); return; }
+    psiTurk.showPage(PRACTICE_PAGE);
+    $("#" + NEXTBUTTON).click(practice);
 };
 
 
