@@ -153,10 +153,10 @@ function outcomeText() {
 let meta, cfg, settleRaw, nVerts, nodeIJK;
 try {
   [meta, cfg] = await Promise.all([
-    fetch(`${RUN}.json`).then(r => r.json()),
+    fetch(`stimuli/${RUN}.json`).then(r => r.json()),
     fetch('web_config.json', { cache: 'no-store' }).then(r => r.json()),
   ]);
-  settleRaw = new Float32Array(await (await fetch(meta.bin)).arrayBuffer());
+  settleRaw = new Float32Array(await (await fetch(`stimuli/${meta.bin}`)).arrayBuffer());
   nVerts = meta.n_verts;
   nodeIJK = meta.node_ijk;
 } catch (e) {
