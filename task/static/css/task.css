@@ -1,8 +1,3 @@
-/* Google Fonts imports removed: Crimson Text and Roboto had no font-family
-   rule, and "Exo 2" is used only by .questionnaireheader, which no template
-   references. They were also plain http, so an https deploy blocked them as
-   mixed content anyway. Lato, which IS reachable, is vendored in slider.css. */
-
 
 h1.questionnaireheader {
         font-family: "Exo 2";
