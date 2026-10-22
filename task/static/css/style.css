@@ -2,9 +2,9 @@ body {
     padding:0px;
     margin: 0px;
     background-color: white;
-    color: black;                  /*global definition for the font color*/
+    color: black; /*global definition for the font color*/
     font-weight: 300; 
-    font-size: 13pt;               /*global definition for the font size*/
+    font-size: 13pt; /*global definition for the font size*/
 }
 
 
@@ -46,7 +46,7 @@ hr {
     width: min(90vw, 100vmin);  
 }
 
-/* ad.html  - the ad that people view first */
+/* ad.html - the ad that people view first */
 #adlogo {
     width: 140px;
     padding: 2px;
