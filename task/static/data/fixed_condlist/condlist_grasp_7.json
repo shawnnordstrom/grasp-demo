@@ -1,17 +1,29 @@
 {
- "_comment": "grasp condition 7: the 12 stimuli (3 shapes x slouch/soft/middle/hard), one try each; shuffled (seed 2007) so that no two consecutive objects share a shape or a material",
+ "_comment": "grasp condition 7: the 12 stimuli (3 shapes x slouch/soft/middle/hard) twice, as two blocks of 12, each shuffled (seed 3007) so that no two consecutive objects share a shape or a material",
  "condition": [
-  "blob_stim_cube_soft",
+  "blob_stim_beanbag_hard",
   "blob_stim_sphere_middle",
   "blob_stim_beanbag_soft",
   "blob_stim_cube_slouch",
-  "blob_stim_beanbag_hard",
-  "blob_stim_sphere_soft",
+  "blob_stim_sphere_hard",
+  "blob_stim_cube_soft",
+  "blob_stim_sphere_slouch",
   "blob_stim_beanbag_middle",
   "blob_stim_cube_hard",
   "blob_stim_beanbag_slouch",
-  "blob_stim_sphere_hard",
   "blob_stim_cube_middle",
-  "blob_stim_sphere_slouch"
+  "blob_stim_sphere_soft",
+  "blob_stim_beanbag_hard",
+  "blob_stim_sphere_middle",
+  "blob_stim_cube_slouch",
+  "blob_stim_sphere_hard",
+  "blob_stim_beanbag_middle",
+  "blob_stim_sphere_slouch",
+  "blob_stim_cube_soft",
+  "blob_stim_beanbag_slouch",
+  "blob_stim_cube_middle",
+  "blob_stim_sphere_soft",
+  "blob_stim_cube_hard",
+  "blob_stim_beanbag_soft"
  ]
 }

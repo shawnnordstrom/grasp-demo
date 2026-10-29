@@ -119,8 +119,9 @@
     margin-right: auto;
 }
 
-/*Three viewer iframes: the sample on top, choices A and B side by side. */
+/*Three viewer iframes: the sample alone first, then choices A and B side by side. */
 .mts-sample { display: flex; justify-content: center; }
 .mts-choices { display: flex; justify-content: center; gap: 2vw; margin-top: 1vh; }
-.mtsframe { width: min(42vw, 50vh); height: 30vh; border: 1px solid black; display: block; }
+.mtsframe { width: min(44vw, 80vh); height: 48vh; border: 1px solid black; display: block; }
+.mts-target { width: min(90vw, 120vh); height: 60vh; }
 .mts-label { font-size: 18px; font-weight: bold; margin-top: 2px; }

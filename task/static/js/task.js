@@ -51,7 +51,7 @@ if (["grasp", "judge", "watch"].indexOf(TASK) < 0) TASK = "grasp";
 var DATA_BASE = "../data";       // blobs + web_config.json, relative to the viewer document
 var VIEWER = "static/viewer/index.html";
 var N_CONDITIONS = { grasp: 12, judge: 6, watch: 6 }[TASK];   // condlist_<task>_<k>.json, k = 0..N-1
-var PRACTICE_RUN = "blob_demo";
+var PRACTICE_RUN = TASK === "grasp" ? "blob_stim_cube_middle" : "blob_demo";
 var UNLOCK_S = 4;               // A/B screen: seconds of simulation before answering (10 s on screen)
 var STIM_PREFIX = "blob_stim_";  // + <shape>_<material>: recorded until the object comes to rest
 var GRIP = Q.get("grip");        // null = the viewer's default (0.5); the slider is hidden
@@ -77,31 +77,33 @@ var CONDITION = Q.has("condition") ? parseInt(Q.get("condition"), 10)
               : (STATIC_SITE ? hashString(WHO || SESSION) % N_CONDITIONS
                              : ((typeof condition !== "undefined") ? condition : 0));
 
+var VERSION = TASK === "grasp" ? (Q.get("version") === "fingertip" ? "fingertip" : "contact") : null;
+var GRASP_DIR = VERSION === "fingertip" ? "instructions_grasp_fingertip" : "instructions_grasp";
+var INSTRUCT_DIR = TASK === "grasp" ? GRASP_DIR : "instructions_" + TASK;
 var INSTRUCT_SEQ = {
-    grasp: ["instructions_grasp/instruct-1.html", "instructions_grasp/instruct-2.html",
-            "instructions_grasp/instruct-3.html", "instructions_grasp/instruct-4.html",
-            "instructions_grasp/instruct-5.html", "instructions_grasp/instruct-6.html"],
+    grasp: [1, 2, 3, 4, 5, 6].map(function(k) { return GRASP_DIR + "/instruct-" + k + ".html"; }),
     judge: ["instructions_judge/instruct-1.html", "instructions_judge/instruct-2.html",
             "instructions_judge/instruct-3.html", "instructions_judge/instruct-4.html"],
     watch: ["instructions_watch/instruct-1.html", "instructions_watch/instruct-2.html"],
 }[TASK];
-var QUIZ_PAGE = "quiz_" + TASK + ".html";
-var QUIZ_ANSWERS = { trueFalse1: "c", trueFalse2: "a" };    // same keys in all three quizzes
+var QUIZ_PAGE = "quiz_" + TASK + (VERSION === "fingertip" ? "_fingertip" : "") + ".html";
+var QUIZ_ANSWERS = TASK === "grasp" ? { trueFalse1: "c", trueFalse2: "a", trueFalse3: "a" } : { trueFalse1: "c", trueFalse2: "a" };
 
 // ---- all pages to be loaded ----------------------------------------------
-// grasp: its own page before practice and its own "ready" page (the contact-point wording)
-var PRACTICE_PAGE = TASK === "grasp" ? "instructions_grasp/practice.html" : null;
-var READY_PAGE = TASK === "grasp" ? "instructions_grasp/ready.html" : "ready.html";
-// what the participant places: "contact points" in the grasp task, "fingers" in the judge task
-var CONTACT_TERMS = TASK === "grasp";
-var pages = ["instructions_" + TASK + "/instructions.html"].concat(INSTRUCT_SEQ,
+// grasp: its own page before practice and its own "ready" page
+var PRACTICE_PAGE = TASK === "grasp" ? GRASP_DIR + "/practice.html" : null;
+var READY_PAGE = TASK === "grasp" ? GRASP_DIR + "/ready.html" : "ready.html";
+// what the participant places: "contact points" in the grasp contact version, "fingers" otherwise
+var CONTACT_TERMS = VERSION === "contact";
+var PAGE_ID = "psiturk-" + TASK + (VERSION ? "-" + VERSION : "");
+var pages = [INSTRUCT_DIR + "/instructions.html"].concat(INSTRUCT_SEQ,
     [QUIZ_PAGE, READY_PAGE, "stage.html", "stage_match.html", "postquestionnaire.html"]);
 if (PRACTICE_PAGE) pages.push(PRACTICE_PAGE);
 if (STATIC_SITE) pages.push("consent.html", "complete.html");
 psiTurk.preloadPages(pages);
 
 psiTurk.recordUnstructuredData && psiTurk.recordUnstructuredData("session_info", {
-    task: TASK, condition: CONDITION, mode: MODE, participant: WHO, session: SESSION,
+    task: TASK, version: VERSION, condition: CONDITION, mode: MODE, participant: WHO, session: SESSION,
     study: Q.get("STUDY_ID"), static_site: STATIC_SITE, screen: [window.innerWidth, window.innerHeight],
 });
 
@@ -169,7 +171,7 @@ var InstructionRunner = function(onDone) {
 
     var step = function() {
         if (i < 0) {
-            psiTurk.showPage("instructions_" + TASK + "/instructions.html");
+            psiTurk.showPage(INSTRUCT_DIR + "/instructions.html");
         } else if (i < INSTRUCT_SEQ.length) {
             psiTurk.showPage(INSTRUCT_SEQ[i]);
         } else {
@@ -234,7 +236,7 @@ var GraspScreen = function(opts, onDone) {
     function mount() {
         next.prop("disabled", true);
         setPrompt("Watch the object settle&hellip;");
-        loadFrame(frame, viewerURL({ kind: "grasp", run: opts.run, trial: opts.trialId, page: "psiturk-" + TASK,
+        loadFrame(frame, viewerURL({ kind: "grasp", run: opts.run, trial: opts.trialId, page: PAGE_ID,
                                      feedback: opts.practice ? "simple" : (Q.get("feedback") === "1" ? "full" : "none"),
                                      attempt0: tries }),
             function(m) {
@@ -277,10 +279,10 @@ var GraspScreen = function(opts, onDone) {
 /********************
  * MATCH SCREEN     *
  ********************/
-// stage_match.html: sample (blob_stim_ recording, flat floor) on top, match and foil (same uneven
-// floor) as A / B. The three falls start together and play to the end. The answer and Replay
-// unlock once every clip has played UNLOCK_S seconds of simulation or ended, whichever is first;
-// Replay restarts all three together (counted) and unlocks again on the same rule.
+// stage_match.html: the sample (blob_stim_ recording, flat floor) plays alone once, with no replay;
+// then match and foil (same uneven floor) appear as A / B. The answer and Replay unlock once both
+// have played UNLOCK_S seconds of simulation or ended, whichever is first; Replay restarts A and B
+// together (counted) and unlocks again on the same rule.
 var MatchScreen = function(item, progress, onDone) {
     psiTurk.showPage("stage_match.html");
     $("#" + FULL_CONTAINER).removeClass("hide_elements");
@@ -290,47 +292,62 @@ var MatchScreen = function(item, progress, onDone) {
                  match: "mts_" + item.cell + "_" + item.floor + "_match",
                  foil: "mts_" + item.cell + "_" + item.floor + "_" + item.foil };
     var sides = item.match_side === "A" ? { A: "match", B: "foil" } : { A: "foil", B: "match" };
-    var frames = { S: runs.S, A: runs[sides.A], B: runs[sides.B] };
+    var pair = { A: runs[sides.A], B: runs[sides.B] };
     var loaded = {}, unlocked = {}, tEnabled = null, replays = 0;
     var next = $("#" + NEXTBUTTON).prop("disabled", true);
     var replay = $("#replaybutton").prop("disabled", true);
+    prefetch([pair.A, pair.B]);
 
-    function playAll() {
+    function count(o) { return Object.keys(o).length; }
+    function playPair() {
         unlocked = {};
         replay.prop("disabled", true);
-        $.each(frames, function(k) {
+        $.each(pair, function(k) {
             document.getElementById("frame" + k).contentWindow.postMessage({ type: "play" }, "*");
         });
     }
-    replay.click(function() { replays += 1; playAll(); });
+    replay.click(function() { replays += 1; playPair(); });
 
-    function count(o) { return Object.keys(o).length; }
-    $.each(frames, function(key, run) {
-        loadFrame(document.getElementById("frame" + key), viewerURL({ kind: "watch", run: run, unlock: UNLOCK_S }), function(m) {
-            if (m.type === "loaded") {
-                loaded[key] = true;
-                if (count(loaded) === 3) {
-                    $("#" + TRIAL_INST).html("Watch all three objects&hellip;");
-                    playAll();
+    function showPair() {
+        $(".mts-sample").addClass("hide_elements");
+        $(".mts-choices, #mts-answer, #replaybutton").removeClass("hide_elements");
+        $("#" + TRIAL_INST).html("Loading&hellip;");
+        $.each(pair, function(key, run) {
+            loadFrame(document.getElementById("frame" + key), viewerURL({ kind: "watch", run: run, unlock: UNLOCK_S }), function(m) {
+                if (m.type === "loaded") {
+                    loaded[key] = true;
+                    if (count(loaded) === 2) {
+                        $("#" + TRIAL_INST).html("Watch both objects&hellip;");
+                        playPair();
+                    }
+                } else if (m.type === "unlock") {
+                    unlocked[key] = true;
+                    if (count(unlocked) < 2) return;
+                    replay.prop("disabled", false);
+                    if (tEnabled === null) {
+                        tEnabled = Date.now();
+                        $("input[name=mts]").prop("disabled", false);
+                        $("#" + TRIAL_INST).html("Which object, A or B, is made of the same material as the object you saw first?");
+                    }
                 }
-            } else if (m.type === "unlock") {
-                unlocked[key] = true;
-                if (count(unlocked) < 3) return;
-                replay.prop("disabled", false);
-                if (tEnabled === null) {
-                    tEnabled = Date.now();
-                    $("input[name=mts]").prop("disabled", false);
-                    $("#" + TRIAL_INST).html("Which object, A or B, is made of the same material as the top object?");
-                }
-            }
+            });
         });
+    }
+
+    loadFrame(document.getElementById("frameS"), viewerURL({ kind: "watch", run: runs.S }), function(m) {
+        if (m.type === "loaded") {
+            $("#" + TRIAL_INST).html("Watch the object&hellip;");
+            document.getElementById("frameS").contentWindow.postMessage({ type: "play" }, "*");
+        } else if (m.type === "played") {
+            setTimeout(showPair, 500);
+        }
     });
     $("input[name=mts]").change(function() { next.prop("disabled", false); });
     next.click(function() {
         var choice = $("input[name=mts]:checked").val();
         onDone({ choice: choice, chosen: sides[choice], correct: sides[choice] === "match",
                  rt_ms: Date.now() - tEnabled, replays: replays, floor: item.floor, foil: item.foil,
-                 match_side: item.match_side, run_A: frames.A, run_B: frames.B, run_sample: frames.S });
+                 match_side: item.match_side, run_A: pair.A, run_B: pair.B, run_sample: runs.S });
     });
 };
 
@@ -348,7 +365,8 @@ var Experiment = function(triallist, onDone) {
     function startTrial() {
         if (cIdx >= n) { onDone(); return; }
         var item = triallist[cIdx], progress = (cIdx + 1) + "/" + n;
-        var base = { phase: "TEST", IsInstruction: false, task: TASK, trial_index: cIdx, condition: CONDITION };
+        var base = { phase: "TEST", IsInstruction: false, task: TASK, version: VERSION, trial_index: cIdx, condition: CONDITION,
+                     repetition: triallist.slice(0, cIdx + 1).filter(function(x) { return JSON.stringify(x) === JSON.stringify(item); }).length };
         var nextRun = triallist[cIdx + 1];
         if (nextRun) prefetch(TASK === "grasp" ? [nextRun] : [STIM_PREFIX + nextRun.cell]);
 
@@ -388,7 +406,7 @@ var Practice = function(onDone) {
     function practice() {
         GraspScreen({ run: PRACTICE_RUN, trialId: TASK + "-practice", progress: "practice", practice: true },
             function(row) {
-                psiTurk.recordTrialData($.extend({ phase: "PRACTICE", IsInstruction: true, task: TASK }, row));
+                psiTurk.recordTrialData($.extend({ phase: "PRACTICE", IsInstruction: true, task: TASK, version: VERSION }, row));
                 psiTurk.showPage(READY_PAGE);
                 $("#" + NEXTBUTTON).click(onDone);
             });

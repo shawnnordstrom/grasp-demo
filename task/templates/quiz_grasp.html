@@ -3,7 +3,7 @@
 
   Same structure as cloth-psiturk's quiz_stiffness.html: a #wrapper > .login-form
   > .questionnaire holding a #prequiz table of <select> questions, checked in
-  task.js. Correct answers: Q1 = c, Q2 = a.
+  task.js. Correct answers: Q1 = c, Q2 = a, Q3 = a.
 -->
 <!DOCTYPE html>
 <html lang="en-US">
@@ -51,6 +51,20 @@
                                         <option value="a">The green rectangle on the floor.</option>
                                         <option value="b">The grid lines on the floor.</option>
                                         <option value="c">Nothing&mdash;the object can go anywhere.</option>
+                                    </select>
+                                </p>
+                            </td>
+                        </tr>
+
+                        <tr>
+                            <td class="question">
+                                <p class="questiontext1" style="text-align: left">
+                                    Q3. You placed three contact points, then noticed the last one is in the wrong spot. What should you do?
+                                    <select id="trueFalse3" name="featureAttend">
+                                        <option value="noresp" SELECTED></option>
+                                        <option value="a">Click &ldquo;undo contact point&rdquo; once, then click the right spot.</option>
+                                        <option value="b">Press GO; the computer will move it to a better spot.</option>
+                                        <option value="c">Drag the blue dot across the object to the right spot.</option>
                                     </select>
                                 </p>
                             </td>

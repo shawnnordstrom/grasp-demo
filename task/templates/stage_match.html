@@ -4,7 +4,7 @@
   Same skeleton as stage.html (#full-container > #moviescreen above #register, #qspan,
   #nextbutton, #progress) for the match-to-sample judgment. Like cloth-psiturk's stage it
   shows three stimuli and collects a radio response; here each stimulus is a viewer iframe
-  playing a prerecorded fall (sample on top, choices A and B below).
+  playing a prerecorded fall (the sample alone first, then choices A and B).
 -->
 <!DOCTYPE html>
 <html lang="en-US">
@@ -21,9 +21,9 @@
             <!-- Movie Screen -->
             <div id="moviescreen">
                 <div class="mts-sample">
-                    <iframe id="frameS" class="mtsframe" title="Top object"></iframe>
+                    <iframe id="frameS" class="mtsframe mts-target" title="Object"></iframe>
                 </div>
-                <div class="mts-choices">
+                <div class="mts-choices hide_elements">
                     <div><iframe id="frameA" class="mtsframe" title="Object A"></iframe><div class="mts-label">A</div></div>
                     <div><iframe id="frameB" class="mtsframe" title="Object B"></iframe><div class="mts-label">B</div></div>
                 </div>
@@ -33,13 +33,15 @@
                 <div id="response_region">
                     <div class="radio_option_container">
                         <span id="qspan"></span><br>
+                        <span id="mts-answer" class="hide_elements">
                         <label class="radio"><input type="radio" name="mts" value="A" disabled><span class="outer"><span class="inner"></span></span>A</label>
                         <label class="radio"><input type="radio" name="mts" value="B" disabled><span class="outer"><span class="inner"></span></span>B</label>
+                        </span>
                     </div>
                 </div>
                 <hr />
                 <div id="centerdiv">
-                    <button id="replaybutton" class="incenterdiv btn btn-default btn-lg" disabled>
+                    <button id="replaybutton" class="incenterdiv btn btn-default btn-lg hide_elements" disabled>
                         <span class="glyphicon glyphicon-repeat"></span>
                         Replay
                     </button>
