@@ -15,7 +15,8 @@
   Messages to the parent: loaded, ready_to_place, go, grasp_done, sim_error, unlock, played, error.
   Params: run, base (folder of the blob and web_config.json, default ../data), kind, mode, pid,
           session, trial, page, attempt0, grip (fixed squeeze, default 0.5), showgrip=1 (slider
-          visible), feedback=none|simple|full, api (sim origin; absent = the deployed Lambda)
+          visible), feedback=none|simple|full, api (sim origin; absent = the deployed Lambda),
+          aim=x,y az zoom (a camera the parent shares across viewers; absent = aimed per object)
 -->
 <style>
   :root { color-scheme: dark; }
@@ -128,7 +129,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(cfg.background_color);
 const camera = new THREE.PerspectiveCamera(cfg.camera_fov, innerWidth/innerHeight, 0.01, 100);
 camera.up.set(0, 0, 1);
-const az = THREE.MathUtils.degToRad(cfg.camera_azimuth), el_ = THREE.MathUtils.degToRad(cfg.camera_elevation);
+const az = THREE.MathUtils.degToRad(parseFloat(q.get('az') ?? cfg.camera_azimuth)), el_ = THREE.MathUtils.degToRad(cfg.camera_elevation);
 // Same camera distance for every object, so size on screen is comparable across trials (the demo
 // frames the whole bounce, which leaves bouncy objects tiny). watch: aimed halfway between where
 // the object is dropped and where it comes to rest (on uneven floors it can roll away); grasp:
@@ -141,7 +142,8 @@ function centroidXY(f) {
 let [cx, cy] = centroidXY(meta.n_frames - 1);
 const other = KIND === 'grasp' ? meta.target_xy : centroidXY(0);
 if (other) { cx = (cx + other[0]) / 2; cy = (cy + other[1]) / 2; }
-const dist = (KIND === 'watch' ? 0.55 : 0.62) * cfg.camera_distance;
+if (q.has('aim')) [cx, cy] = q.get('aim').split(',').map(Number);
+const dist = (KIND === 'watch' ? 0.55 : 0.62) * cfg.camera_distance * parseFloat(q.get('zoom') ?? '1');
 camera.position.set(cx + dist * Math.cos(el_) * Math.sin(az), cy - dist * Math.cos(el_) * Math.cos(az),
                     cfg.camera_target_z + dist * Math.sin(el_));
 const controls = new OrbitControls(camera, renderer.domElement);

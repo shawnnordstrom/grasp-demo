@@ -1,0 +1,539 @@
+{
+ "_comment": "watch condition 6: 36 trials, target on the flat floor, match and distractor on one uneven floor",
+ "condition": [
+  {
+   "cell": "sphere_hard",
+   "foil": "soft",
+   "floor": "bumpy",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.07,
+     0.579
+    ],
+    "az": -22.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_slouch",
+   "foil": "hard",
+   "floor": "ridges",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.168,
+     0.552
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_slouch",
+   "foil": "middle",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.588,
+     0.588
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_slouch",
+   "foil": "middle",
+   "floor": "bumpy",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.522,
+     0.627
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_slouch",
+   "foil": "middle",
+   "floor": "ridges",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.443,
+     0.435
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_hard",
+   "foil": "soft",
+   "floor": "ridges",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.685,
+     0.504
+    ],
+    "az": -37.0,
+    "zoom": 1.1
+   }
+  },
+  {
+   "cell": "cube_hard",
+   "foil": "slouch",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.528,
+     0.541
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_slouch",
+   "foil": "soft",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.537,
+     0.511
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_soft",
+   "foil": "slouch",
+   "floor": "pillars",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.501,
+     0.501
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_middle",
+   "foil": "slouch",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.536,
+     0.532
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_middle",
+   "foil": "soft",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.536,
+     0.523
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_soft",
+   "foil": "middle",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.511,
+     0.504
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_middle",
+   "foil": "hard",
+   "floor": "checker",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.566,
+     0.587
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_hard",
+   "foil": "middle",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.423,
+     0.461
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_hard",
+   "foil": "middle",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.903,
+     0.917
+    ],
+    "az": -217.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_slouch",
+   "foil": "soft",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.429,
+     0.423
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_middle",
+   "foil": "hard",
+   "floor": "bumpy",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.803,
+     1.203
+    ],
+    "az": 83.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_middle",
+   "foil": "soft",
+   "floor": "bumpy",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.532,
+     0.682
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_soft",
+   "foil": "slouch",
+   "floor": "ridges",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.476,
+     0.51
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_soft",
+   "foil": "hard",
+   "floor": "bumpy",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.49,
+     1.108
+    ],
+    "az": -97.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_soft",
+   "foil": "hard",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.507,
+     0.466
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_hard",
+   "foil": "middle",
+   "floor": "bumpy",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.49,
+     1.063
+    ],
+    "az": -67.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_hard",
+   "foil": "slouch",
+   "floor": "ridges",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     -0.246,
+     0.766
+    ],
+    "az": -172.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_slouch",
+   "foil": "hard",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.517,
+     0.52
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_soft",
+   "foil": "hard",
+   "floor": "pillars",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.427,
+     0.928
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_soft",
+   "foil": "slouch",
+   "floor": "bumpy",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.513,
+     0.656
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_hard",
+   "foil": "slouch",
+   "floor": "bumpy",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.984,
+     1.173
+    ],
+    "az": -217.0,
+    "zoom": 1.1
+   }
+  },
+  {
+   "cell": "sphere_middle",
+   "foil": "soft",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.474,
+     0.483
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_middle",
+   "foil": "slouch",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.657,
+     0.475
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_slouch",
+   "foil": "soft",
+   "floor": "ridges",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.471,
+     0.463
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "beanbag_soft",
+   "foil": "middle",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.652,
+     0.476
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_middle",
+   "foil": "slouch",
+   "floor": "ridges",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.397,
+     0.458
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_middle",
+   "foil": "hard",
+   "floor": "ridges",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     -0.198,
+     0.71
+    ],
+    "az": -172.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_hard",
+   "foil": "soft",
+   "floor": "pillars",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.473,
+     0.476
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_slouch",
+   "foil": "hard",
+   "floor": "bumpy",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.07,
+     0.507
+    ],
+    "az": -37.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "cube_soft",
+   "foil": "middle",
+   "floor": "ridges",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.4,
+     0.508
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  }
+ ],
+ "practice": [
+  {
+   "cell": "cube_hard",
+   "foil": "slouch",
+   "floor": "ridges",
+   "match_side": "A",
+   "camera": {
+    "aim": [
+     0.137,
+     0.458
+    ],
+    "az": -22.0,
+    "zoom": 1.0
+   }
+  },
+  {
+   "cell": "sphere_slouch",
+   "foil": "hard",
+   "floor": "checker",
+   "match_side": "B",
+   "camera": {
+    "aim": [
+     0.634,
+     0.515
+    ],
+    "az": -52.0,
+    "zoom": 1.0
+   }
+  }
+ ]
+}
