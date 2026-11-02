@@ -4,20 +4,6 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>viewer</title>
-<!--
-  One object, embedded by task.js in an iframe (one fresh document per object). Stripped copy of
-  the public demo page (grasp-demo/index.html): same scene, same Taubin smoothing as the physics
-  contact surface, same chunked live sim.
-    kind=grasp  watch it fall, place 1-5 fingers, GO once; posts {type:'grasp_done'} to the parent
-    kind=watch  play the fall once and hold the last frame; no interaction; each {type:'play'} from
-                the parent (re)starts it; {type:'unlock'} is posted when a play reaches `unlock`
-                seconds of simulation (default 4) or ends sooner, {type:'played'} when it ends
-  Messages to the parent: loaded, ready_to_place, go, grasp_done, sim_error, unlock, played, error.
-  Params: run, base (folder of the blob and web_config.json, default ../data), kind, mode, pid,
-          session, trial, page, attempt0, grip (fixed squeeze, default 0.5), showgrip=1 (slider
-          visible), feedback=none|simple|full, api (sim origin; absent = the deployed Lambda),
-          aim=x,y az zoom (a camera the parent shares across viewers; absent = aimed per object)
--->
 <style>
   :root { color-scheme: dark; }
   html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
@@ -108,6 +94,7 @@ try {
     fetch(`${BASE}/web_config.json`).then(r => r.json()),
   ]);
   settleRaw = new Float32Array(await (await fetch(`${BASE}/${meta.bin}`)).arrayBuffer());
+  if (q.has('floor')) Object.assign(meta, await (await fetch(`${BASE}/floors/${q.get('floor')}.json`)).json());
   nVerts = meta.n_verts;
   nodeIJK = meta.node_ijk;
 } catch (e) {
@@ -255,7 +242,7 @@ const SPEED = cfg.default_speed;
 
 let phase = 'settle';                 // settle | place | sim | result | done
 let src = { raw: settleRaw, n: meta.n_frames, probes: null, phases: null };
-let frame = 0, playing = KIND === 'grasp', acc = 0, last = performance.now();
+let frame = 0, playing = KIND === 'grasp', paused = false, acc = 0, last = performance.now();
 let picked = [], runToken = 0, unlockSent = false;
 
 function setPhase(p, msg) {
@@ -488,10 +475,10 @@ addEventListener('resize', () => {
 });
 // watch: the parent starts all objects of a screen together
 addEventListener('message', e => {
-  if (e.data && e.data.type === 'play' && KIND === 'watch') { setFrame(0); acc = 0; playing = true; unlockSent = false; }
+  if (e.data && e.data.type === 'play' && KIND === 'watch') { setFrame(0); acc = 0; playing = true; unlockSent = false; paused = !!e.data.paused; }
+  if (e.data && e.data.type === 'pause') paused = e.data.on;
 });
 
-// automated tests: where the object is on screen (CSS px)
 window.objectOnScreen = () => {
   geom.computeBoundingSphere();
   const c = geom.boundingSphere.center.clone().project(camera);
@@ -508,12 +495,12 @@ let lastCam = camera.position.clone();
 renderer.setAnimationLoop(() => {
   const now = performance.now();
   const dt = (now - last)/1000; last = now;
-  if (playing) {
+  if (playing && !paused) {
     acc += dt * SPEED * (src.pace || 1);
     while (acc >= meta.frame_dt) {
       acc -= meta.frame_dt;
       if (frame + 1 >= src.n) {
-        if (src.streaming) { acc = 0; break; }        // caught up to the sim -- wait for more frames
+        if (src.streaming) { acc = 0; break; }
         if (KIND === 'watch') {
           if (!unlockSent) { unlockSent = true; post({ type: 'unlock' }); }
           post({ type: 'played' });

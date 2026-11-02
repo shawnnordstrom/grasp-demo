@@ -1,28 +1,38 @@
-/*
- * psiturk_stub.js -- preview-only stand-in for psiturk.js.
- *
- * Loaded by preview.html instead of /static/js/psiturk.js so the experiment can
- * be run and iterated on with no psiturk install, no database and no HIT.
- * task.js is NOT aware of this file: under real psiturk, exp.html loads the
- * genuine psiturk.js and this one is never fetched.
- *
- * preloadPages uses synchronous XHR on purpose -- that is what psiturk's own
- * implementation does ($.ajax with async:false), and it means showPage can stay
- * synchronous, exactly as task.js expects.
- *
- * The one visible addition is the data panel (bottom-left, "data"): every
- * recordTrialData row is shown live, which is the point of a self-preview. It is
- * hidden for real participants (PROLIFIC_PID in the URL).
- *
- * Also the runtime of the static site (experiment.html, e.g. on GitHub Pages), so
- * template paths are relative to the page, not to the server root.
- */
 /* global $ */
 (function () {
     var pages = {};
     var rows = [];
     var unstructured = {};
-    var hidePanel = new URLSearchParams(window.location.search).has("PROLIFIC_PID");
+    var Q = new URLSearchParams(window.location.search);
+    var hidePanel = Q.has("PROLIFIC_PID") || Q.get("data") !== "1";
+    var SAVE_URL = (Q.has("api") ? Q.get("api").replace(/\/+$/, "")
+                  : /^(localhost|127\.0\.0\.1)$/.test(window.location.hostname) ? window.location.origin
+                  : "https://0fh9f5n0mc.execute-api.us-east-2.amazonaws.com") + "/save";
+    var SAVE_TOKEN = "2ipvFHPifLffuihBhY7KQIU5dK-7ixfe";
+    var LOAD = Math.random().toString(36).slice(2, 10);
+    var STARTED = Date.now();
+    var queue = Promise.resolve();
+
+    function post(done) {
+        var info = unstructured.session_info || {};
+        var body = JSON.stringify({ token: SAVE_TOKEN, load: LOAD, started: STARTED, done: done, participant: info.participant,
+                                    session: info.session, study: info.study, task: info.task, rows: rows, unstructured: unstructured });
+        var stop = new AbortController();
+        var timer = setTimeout(function () { stop.abort(); }, 20000);
+        return fetch(SAVE_URL, { method: "POST", body: body, keepalive: body.length < 60000, signal: stop.signal })
+            .then(function (r) {
+                clearTimeout(timer);
+                if (!r.ok) throw new Error("save failed: " + r.status);
+            });
+    }
+
+    function send(done, tries) {
+        return post(done).catch(function (e) {
+            if (tries <= 1) throw e;
+            return new Promise(function (ok) { setTimeout(ok, 2000); })
+                .then(function () { return send(done, tries - 1); });
+        });
+    }
 
     function panel() {
         if (hidePanel) return null;
@@ -64,7 +74,7 @@
         preloadPages: function (list) {
             list.forEach(function (p) {
                 var xhr = new XMLHttpRequest();
-                xhr.open("GET", "templates/" + p, false);    // sync, as psiturk does
+                xhr.open("GET", "templates/" + p, false);
                 try {
                     xhr.send(null);
                     pages[p] = xhr.status === 200 ? xhr.responseText
@@ -80,8 +90,6 @@
             var html = pages[page];
             if (!html) { document.body.innerHTML =
                 '<p style="color:#c00">page not preloaded: ' + page + "</p>"; return; }
-            // psiturk swaps only the body content; the templates are full
-            // documents, so pull the <body> out the same way it does
             var m = /<body[^>]*>([\s\S]*)<\/body>/i.exec(html);
             document.body.innerHTML = m ? m[1] : html;
             panel(); repaint();
@@ -93,27 +101,26 @@
         },
 
         recordTrialData: function (d) {
-            rows.push(d);
+            rows.push(Object.assign({ dateTime: Date.now() }, d));
             console.log("[recordTrialData]", d);
             repaint();
         },
 
-        // no server to save to; succeed on the next tick so the flow is
-        // async-shaped exactly as it is against real psiturk
+        // one save at a time and in order, so a slow one can't land after a newer one
         saveData: function (opts) {
-            setTimeout(function () {
-                if (opts && opts.success) opts.success();
-            }, 0);
+            var sent = queue.catch(function () {}).then(function () { return send(!!opts, opts ? 3 : 1); });
+            queue = sent;
+            sent.then(function () { if (opts && opts.success) opts.success(); },
+                      function () { if (opts && opts.error) opts.error(); });
         },
 
         computeBonus: function (route, cb) { if (cb) cb(); },
 
         // Renders the real complete.html, the same way showPage() does for
-        // every other template -- so this is what a participant actually sees,
-        // not a preview-only summary.
+        // all template.
         completeHIT: function () {
             var xhr = new XMLHttpRequest();
-            xhr.open("GET", "templates/complete.html", false);    // sync, as psiturk does
+            xhr.open("GET", "templates/complete.html", false);
             var html = null;
             try {
                 xhr.send(null);

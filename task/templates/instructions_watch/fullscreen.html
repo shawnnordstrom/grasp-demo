@@ -1,0 +1,47 @@
+<!--
+  <fullscreen.html>
+-->
+<!DOCTYPE html>
+<html lang="en-US">
+    <head>
+        <meta charset="UTF-8">
+        <link rel="icon" href="/static/favicon.ico" />
+        <meta http-equiv="pragma" content="no-cache" />
+        <title>Full screen</title>
+    </head>
+    <body>
+        <div id="container-instructions">
+            <h1 id="instr_header"> Instructions </h1>
+            <div class="instructions" id="instruct">
+                <div class="well">
+                    <p id="toptext" style="color:black;">
+                            This experiment requires you to be in <b>full screen</b> mode. The experiment will switch to full screen when you press the button below. <br>
+                            We will return your browser to its normal size at the end. Please stay in full screen until the experiment is over. If you leave full screen, the experiment will pause until you return. <br>
+                            Click <b>Switch to full screen</b> and then <b>Next</b> to continue.
+                    </p>
+                    <p id="fullscreenerror" class="hide_elements" style="color:red;">
+                            Your browser could not switch to full screen. Please use a desktop browser such as Chrome, Firefox, Edge, or Safari.
+                    </p>
+                </div>
+
+                <tr><td><br/></td></tr>
+
+                <table id="moviescreen" align="center">
+                    <tr>
+                        <td>
+                            <br>
+                            <button type="button" id="fullscreenbutton" class="incenterdiv btn btn-primary btn-lg">
+                                Switch to full screen
+                            </button>
+                            <button type="button" id="nextbutton" class="incenterdiv btn btn-success btn-lg hide_elements">
+                                Next
+                                <span class="glyphicon glyphicon-arrow-right"></span>
+                            </button>
+                        </td>
+                    </tr>
+                </table> 
+
+            </div>
+        </div>
+    </body>
+</html>

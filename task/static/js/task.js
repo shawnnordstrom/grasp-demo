@@ -31,7 +31,8 @@
  *   psiTurk   exp.html (psiturk.js, its own ad + consent routes, data saved to its database)
  *   static    experiment.html?task=... (psiturk_stub.js; GitHub Pages / Prolific). Shows
  *             consent.html first and complete.html last itself. Grasps are logged by the sim
- *             server; the recorded rows stay in the page (data button in test mode).
+ *             server; the recorded rows go to its /save route (aws/lambda_fn/study.py), and
+ *             stay visible in the page (data button in test mode).
  */
 
 /* global $, psiTurk, condition, isMobileTablet */
@@ -87,8 +88,13 @@ var INSTRUCT_SEQ = {
     watch: ["instructions_watch/instruct-1.html", "instructions_watch/instruct-2.html"],
 }[TASK];
 var QUIZ_PAGE = "quiz_" + TASK + (VERSION === "fingertip" ? "_fingertip" : "") + ".html";
-var QUIZ_ANSWERS = TASK === "grasp" ? { trueFalse1: "c", trueFalse2: "a", trueFalse3: "a" } : { trueFalse1: "c", trueFalse2: "a" };
+var QUIZ_ANSWERS = {
+    grasp: { trueFalse1: "c", trueFalse2: "a", trueFalse3: "a" },
+    judge: { trueFalse1: "c", trueFalse2: "a" },
+    watch: { trueFalse1: "c", trueFalse2: "b" },
+}[TASK];
 var CONSENT_PAGE = TASK === "watch" ? "consent_watch.html" : "consent.html";
+var FULLSCREEN_PAGE = TASK === "watch" ? "instructions_watch/fullscreen.html" : null;
 
 // ---- all pages to be loaded ----------------------------------------------
 // grasp and watch: their own page before practice and their own "ready" page
@@ -100,6 +106,7 @@ var PAGE_ID = "psiturk-" + TASK + (VERSION ? "-" + VERSION : "");
 var pages = [INSTRUCT_DIR + "/instructions.html"].concat(INSTRUCT_SEQ,
     [QUIZ_PAGE, READY_PAGE, "stage.html", "stage_match.html", "postquestionnaire.html"]);
 if (PRACTICE_PAGE) pages.push(PRACTICE_PAGE);
+if (FULLSCREEN_PAGE) pages.push(FULLSCREEN_PAGE);
 if (STATIC_SITE) pages.push(CONSENT_PAGE, "complete.html");
 psiTurk.preloadPages(pages);
 
@@ -164,6 +171,78 @@ var Consent = function(onDone) {
 
 
 /********************
+ * FULL SCREEN      *
+ ********************/
+var fullscreenActive = false, fullscreenExits = 0, fullscreenHeight = 0;
+
+function inFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
+function fullscreenPaused() { return $("#fullscreenpause").length > 0; }
+
+function openFullscreen() {
+    var el = document.documentElement, open = el.requestFullscreen || el.webkitRequestFullscreen;
+    var opened = open ? open.call(el) : Promise.reject();
+    if (opened) opened.catch(function() { $("#fullscreenerror").removeClass("hide_elements"); });
+}
+
+function leaveFullscreen() {
+    var close = document.exitFullscreen || document.webkitExitFullscreen;
+    return close.call(document);
+}
+
+function closeFullscreen() {
+    fullscreenActive = false;
+    if (inFullscreen()) leaveFullscreen();
+}
+
+function returnToFullscreen() {
+    if (!inFullscreen()) { openFullscreen(); return; }
+    var left = leaveFullscreen();
+    if (left) left.then(openFullscreen);
+}
+
+function pauseViewers(on) {
+    $("iframe").each(function() { this.contentWindow.postMessage({ type: "pause", on: on }, "*"); });
+}
+
+function pauseForFullscreen() {
+    if (fullscreenPaused()) return;
+    fullscreenExits += 1;
+    pauseViewers(true);
+    $("body").append("<div id='fullscreenpause' style='position:fixed; top:0; left:0; right:0; bottom:0; z-index:10000; background:#fff; color:#000; text-align:center; padding-top:30vh;'>"
+        + "<h1>The experiment is paused</h1><p>Please return to full screen to continue.</p><br>"
+        + "<button type='button' class='btn btn-success btn-lg'>Return to full screen</button></div>");
+    $("#fullscreenpause button").click(returnToFullscreen);
+}
+
+function fullscreenChanged() {
+    if (inFullscreen()) {
+        fullscreenActive = true;
+        fullscreenHeight = window.innerHeight;
+        $("#fullscreenbutton").addClass("hide_elements").siblings("#" + NEXTBUTTON).removeClass("hide_elements");
+        $("#fullscreenpause").remove();
+        pauseViewers(false);
+    } else if (fullscreenActive) {
+        pauseForFullscreen();
+    }
+}
+
+function fullscreenResized() {
+    if (!fullscreenActive) return;
+    fullscreenHeight = Math.max(fullscreenHeight, window.innerHeight);
+    if (window.innerHeight < fullscreenHeight - 40) pauseForFullscreen();
+}
+document.addEventListener("onfullscreenchange" in document ? "fullscreenchange" : "webkitfullscreenchange", fullscreenChanged);
+window.addEventListener("resize", fullscreenResized);
+
+var Fullscreen = function(onDone) {
+    if (!FULLSCREEN_PAGE || Q.get("skip") === "1") { onDone(); return; }
+    psiTurk.showPage(FULLSCREEN_PAGE);
+    $("#fullscreenbutton").click(openFullscreen);
+    $("#" + NEXTBUTTON).click(onDone);
+};
+
+
+/********************
  * INSTRUCTIONS     *
  ********************/
 var InstructionRunner = function(onDone) {
@@ -207,6 +286,7 @@ var Quiz = function(onDone) {
             });
             if (got !== want) allRight = false;
         });
+        psiTurk.saveData();
 
         if (allRight) {
             onDone();
@@ -300,7 +380,8 @@ var MatchScreen = function(item, progress, onDone, practice) {
     var sides = item.match_side === "A" ? { A: "match", B: "foil" } : { A: "foil", B: "match" };
     var pair = { A: runs[sides.A], B: runs[sides.B] };
     var view = item.camera ? { aim: item.camera.aim.join(","), az: item.camera.az, zoom: item.camera.zoom } : {};
-    var loaded = {}, unlocked = {}, tEnabled = null, replays = 0, firstChoice = null;
+    var onFloor = function(floor) { return item.camera ? $.extend({ floor: floor }, view) : view; };
+    var loaded = {}, unlocked = {}, tEnabled = null, replays = 0, firstChoice = null, exits0 = fullscreenExits;
     if (item.camera) $("#frameS").removeClass("mts-target");
     var next = $("#" + NEXTBUTTON).prop("disabled", true);
     var replay = $("#replaybutton").prop("disabled", true);
@@ -311,7 +392,7 @@ var MatchScreen = function(item, progress, onDone, practice) {
         unlocked = {};
         replay.prop("disabled", true);
         $.each(pair, function(k) {
-            document.getElementById("frame" + k).contentWindow.postMessage({ type: "play" }, "*");
+            document.getElementById("frame" + k).contentWindow.postMessage({ type: "play", paused: fullscreenPaused() }, "*");
         });
     }
     replay.click(function() { replays += 1; playPair(); });
@@ -321,7 +402,7 @@ var MatchScreen = function(item, progress, onDone, practice) {
         $(".mts-choices, #mts-answer, #replaybutton").removeClass("hide_elements");
         $("#" + TRIAL_INST).html("Loading&hellip;");
         $.each(pair, function(key, run) {
-            loadFrame(document.getElementById("frame" + key), viewerURL($.extend({ kind: "watch", run: run, unlock: UNLOCK_S }, view)), function(m) {
+            loadFrame(document.getElementById("frame" + key), viewerURL($.extend({ kind: "watch", run: run, unlock: UNLOCK_S }, onFloor(item.floor))), function(m) {
                 if (m.type === "loaded") {
                     loaded[key] = true;
                     if (count(loaded) === 2) {
@@ -342,10 +423,10 @@ var MatchScreen = function(item, progress, onDone, practice) {
         });
     }
 
-    loadFrame(document.getElementById("frameS"), viewerURL($.extend({ kind: "watch", run: runs.S }, view)), function(m) {
+    loadFrame(document.getElementById("frameS"), viewerURL($.extend({ kind: "watch", run: runs.S }, onFloor("flat"))), function(m) {
         if (m.type === "loaded") {
             $("#" + TRIAL_INST).html("Watch the object&hellip;");
-            document.getElementById("frameS").contentWindow.postMessage({ type: "play" }, "*");
+            document.getElementById("frameS").contentWindow.postMessage({ type: "play", paused: fullscreenPaused() }, "*");
         } else if (m.type === "played") {
             setTimeout(showPair, 500);
         }
@@ -362,7 +443,8 @@ var MatchScreen = function(item, progress, onDone, practice) {
         var choice = $("input[name=mts]:checked").val();
         onDone({ choice: choice, chosen: sides[choice], correct: sides[choice] === "match", first_choice: firstChoice,
                  rt_ms: Date.now() - tEnabled, replays: replays, floor: item.floor, foil: item.foil,
-                 match_side: item.match_side, run_A: pair.A, run_B: pair.B, run_sample: runs.S, camera: item.camera || null });
+                 match_side: item.match_side, run_A: pair.A, run_B: pair.B, run_sample: runs.S, camera: item.camera || null,
+                 fullscreen_exits: fullscreenExits - exits0 });
     });
 };
 
@@ -425,6 +507,7 @@ var Practice = function(items, onDone) {
         MatchScreen(items[i], "practice " + (i + 1) + "/" + items.length, function(row) {
             psiTurk.recordTrialData($.extend({ phase: "PRACTICE", IsInstruction: true, task: TASK, trial_index: i,
                                                TrialName: items[i].cell, cell: items[i].cell }, row));
+            psiTurk.saveData();
             watchPractice(i + 1);
         }, true);
     }
@@ -448,6 +531,7 @@ var Practice = function(items, onDone) {
 var PostQuestionnaire = function(onDone) {
     psiTurk.showPage("postquestionnaire.html");
     $("#next").click(function() {
+        $(this).prop("disabled", true).text("Saving...");
         psiTurk.recordUnstructuredData && psiTurk.recordUnstructuredData("comments", $("#comments").val());
         onDone();
     });
@@ -456,6 +540,10 @@ var PostQuestionnaire = function(onDone) {
 var Finish = function() {
     // cloth-psiturk calls psiTurk.computeBonus here; this task pays a flat rate
     // and records no per-trial 'hit' field, so there is nothing to compute.
+    if (FULLSCREEN_PAGE) {
+        psiTurk.recordUnstructuredData && psiTurk.recordUnstructuredData("fullscreen_exits", fullscreenExits);
+        closeFullscreen();
+    }
     psiTurk.saveData({
         success: function() { psiTurk.completeHIT(); },
         error:   function() { psiTurk.completeHIT(); },
@@ -478,9 +566,9 @@ $(window).load(function() {
             var trials = list.condition;
             var n = parseInt(Q.get("n") || "0", 10);
             if (n > 0) trials = trials.slice(0, n);
-            Consent(function() { InstructionRunner(function() { Practice(list.practice, function() {
+            Consent(function() { Fullscreen(function() { InstructionRunner(function() { Practice(list.practice, function() {
                 Experiment(trials, function() { PostQuestionnaire(Finish); });
-            }); }); });
+            }); }); }); });
         })
         .fail(function() {
             $("body").html("<p>Could not load the condition list for condition "
