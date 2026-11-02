@@ -19,7 +19,7 @@
                                     session: info.session, study: info.study, task: info.task, rows: rows, unstructured: unstructured });
         var stop = new AbortController();
         var timer = setTimeout(function () { stop.abort(); }, 20000);
-        return fetch(SAVE_URL, { method: "POST", body: body, keepalive: body.length < 60000, signal: stop.signal })
+        return fetch(SAVE_URL, { method: "POST", body: body, keepalive: done && body.length < 60000, signal: stop.signal })
             .then(function (r) {
                 clearTimeout(timer);
                 if (!r.ok) throw new Error("save failed: " + r.status);
