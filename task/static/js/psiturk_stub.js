@@ -23,6 +23,7 @@
             .then(function (r) {
                 clearTimeout(timer);
                 if (!r.ok) throw new Error("save failed: " + r.status);
+                return r.json();
             });
     }
 
@@ -110,7 +111,7 @@
         saveData: function (opts) {
             var sent = queue.catch(function () {}).then(function () { return send(!!opts, opts ? 3 : 1); });
             queue = sent;
-            sent.then(function () { if (opts && opts.success) opts.success(); },
+            sent.then(function (reply) { if (opts && opts.success) opts.success(reply); },
                       function () { if (opts && opts.error) opts.error(); });
         },
 

@@ -1,68 +1,36 @@
 /*
- * task.js -- soft-object experiment: three tasks on one skeleton
+ * task.js, soft-object experiment: three tasks
  *
  *   grasp   pick up each of the 12 objects (3 shapes x slouch/soft/middle/hard), one try each
  *   judge   pick up each of 9 objects (soft/middle/hard), then match-to-sample: which of A / B is
  *           the same material
  *   watch   match-to-sample only, no grasping
- *
- * Same shape as cloth-psiturk's task.js: page constants up top, a preloaded `pages` list,
- * then InstructionRunner -> Quiz -> Experiment, each a function constructor that drives
- * psiTurk.showPage and hands off by callback. The task is chosen by the page that loads this
- * file (window.TASK, or ?task= on the static site).
- *
- * Every stimulus is one <iframe> running static/viewer/index.html (a fresh document per
- * object; the viewer holds a lot of module-scope state and reloading is the cheapest clean
- * slate). A grasp object is settle (prerecorded) -> place fingers -> lift (simulated live on
- * AWS, logged server-side by aws/lambda_fn/attempt.py). A match screen is three viewers
- * playing prerecorded falls (sample on the flat floor, match and foil on one uneven floor).
- *
- * The viewer reports back over postMessage:
- *   loaded          the object is ready (watch viewers then wait for {type:'play'})
- *   ready_to_place  settle finished; the participant may click the object
- *   go              participant committed; the sim request goes out
- *   grasp_done      maneuver finished playing -- carries outcome, in_target, clicks, lattice sites
- *   sim_error       the sim request failed; the viewer lets the participant press GO again
- *   unlock          a watch viewer reached UNLOCK_S seconds of simulation, or ended sooner
- *   played          a watch viewer finished a full fall
- *   error           the object could not load
- *
- * Two ways to run it:
- *   psiTurk   exp.html (psiturk.js, its own ad + consent routes, data saved to its database)
- *   static    experiment.html?task=... (psiturk_stub.js; GitHub Pages / Prolific). Shows
- *             consent.html first and complete.html last itself. Grasps are logged by the sim
- *             server; the recorded rows go to its /save route (aws/lambda_fn/study.py), and
- *             stay visible in the page (data button in test mode).
- */
-
+ * 
 /* global $, psiTurk, condition, isMobileTablet */
 
-// ---- element ids, as in cloth-psiturk -------------------------------------
+// element ids 
 var FULL_CONTAINER = "full-container";
 var TRIALFRAME     = "trialframe";
 var TRIAL_INST     = "qspan";
 var NEXTBUTTON     = "nextbutton";
 var PROGRESS       = "progress";
 
-// ---- experiment parameters ------------------------------------------------
+// experiment parameters
 var Q = new URLSearchParams(window.location.search);
 var STATIC_SITE = !!window.STATIC_SITE;
 var TASK = window.TASK || Q.get("task") || "grasp";
 if (["grasp", "judge", "watch"].indexOf(TASK) < 0) TASK = "grasp";
-var DATA_BASE = "../data";       // blobs + web_config.json, relative to the viewer document
+var DATA_BASE = "../data"; // blobs + web_config.json, relative to the viewer document
 var VIEWER = "static/viewer/index.html";
-var N_CONDITIONS = { grasp: 12, judge: 6, watch: 20 }[TASK];   // condlist_<task>_<k>.json, k = 0..N-1
+var N_CONDITIONS = { grasp: 12, judge: 6, watch: 20 }[TASK]; // condlist_<task>_<k>.json, k = 0..N-1
 var PRACTICE_RUN = TASK === "grasp" ? "blob_stim_cube_middle" : "blob_demo";
-var UNLOCK_S = 4;               // A/B screen: seconds of simulation before answering (10 s on screen)
-var STIM_PREFIX = "blob_stim_";  // + <shape>_<material>: recorded until the object comes to rest
-var GRIP = Q.get("grip");        // null = the viewer's default (0.5); the slider is hidden
+var STIM_PREFIX = "blob_stim_"; // + <shape>_<material>: recorded until the object comes to rest
+var GRIP = Q.get("grip"); // null = the viewer's default (0.5); the slider is hidden
 var SHOW_GRIP = Q.get("showgrip") === "1";
-// The sim: an explicit ?api= wins; a local preview server (localhost) proxies /simulate* on its
-// own origin; anywhere else (GitHub Pages, a psiTurk server) uses the deployed Lambda.
 var SIM_API = Q.has("api") ? Q.get("api")
             : (/^(localhost|127\.0\.0\.1)$/.test(window.location.hostname) ? window.location.origin : null);
 
-// who: Prolific participant, else ?who= (testing), else the psiTurk id
+// who: Prolific participant, else ?who= (testing)
 var PID = Q.get("PROLIFIC_PID");
 var MODE = PID ? "participant" : "test";
 var WHO = PID || Q.get("who") || (typeof uniqueId !== "undefined" ? uniqueId : null);
@@ -96,7 +64,7 @@ var QUIZ_ANSWERS = {
 var CONSENT_PAGE = TASK === "watch" ? "consent_watch.html" : "consent.html";
 var FULLSCREEN_PAGE = TASK === "watch" ? "instructions_watch/fullscreen.html" : null;
 
-// ---- all pages to be loaded ----------------------------------------------
+// all pages to be loaded
 // grasp and watch: their own page before practice and their own "ready" page
 var PRACTICE_PAGE = TASK === "judge" ? null : INSTRUCT_DIR + "/practice.html";
 var READY_PAGE = TASK === "judge" ? "ready.html" : INSTRUCT_DIR + "/ready.html";
@@ -113,12 +81,12 @@ psiTurk.preloadPages(pages);
 psiTurk.recordUnstructuredData && psiTurk.recordUnstructuredData("session_info", {
     task: TASK, version: VERSION, condition: CONDITION, mode: MODE, participant: WHO, session: SESSION,
     study: Q.get("STUDY_ID"), static_site: STATIC_SITE, screen: [window.innerWidth, window.innerHeight],
+    display: [window.screen.width, window.screen.height], pixel_ratio: window.devicePixelRatio,
+    browser: navigator.userAgent, language: navigator.language,
 });
 
 
-/********************
- * VIEWER FRAMES    *
- ********************/
+// VIEWER FRAMES
 function viewerURL(p) {
     var u = new URLSearchParams({ base: DATA_BASE, mode: MODE, session: SESSION });
     if (WHO) u.set("pid", WHO);
@@ -155,9 +123,7 @@ function prefetch(runs) {
 }
 
 
-/********************
- * CONSENT (static) *
- ********************/
+//consent
 // Under psiTurk, consent.html is its own route before exp.html. The static site shows the
 // same page first and continues on "I agree".
 var Consent = function(onDone) {
@@ -170,10 +136,10 @@ var Consent = function(onDone) {
 };
 
 
-/********************
- * FULL SCREEN      *
- ********************/
-var fullscreenActive = false, fullscreenExits = 0, fullscreenHeight = 0;
+// fullscreen
+var fullscreenActive = false, fullscreenExits = 0, fullscreenHeight = 0, fullscreenLog = [];
+var hiddenMs = 0, hiddenAt = null;
+psiTurk.recordUnstructuredData && psiTurk.recordUnstructuredData("fullscreen_log", fullscreenLog);
 
 function inFullscreen() { return !!(document.fullscreenElement || document.webkitFullscreenElement); }
 function fullscreenPaused() { return $("#fullscreenpause").length > 0; }
@@ -207,6 +173,7 @@ function pauseViewers(on) {
 function pauseForFullscreen() {
     if (fullscreenPaused()) return;
     fullscreenExits += 1;
+    fullscreenLog.push({ event: "exit", at: Date.now() });
     pauseViewers(true);
     $("body").append("<div id='fullscreenpause' style='position:fixed; top:0; left:0; right:0; bottom:0; z-index:10000; background:#fff; color:#000; text-align:center; padding-top:30vh;'>"
         + "<h1>The experiment is paused</h1><p>Please return to full screen to continue.</p><br>"
@@ -216,6 +183,7 @@ function pauseForFullscreen() {
 
 function fullscreenChanged() {
     if (inFullscreen()) {
+        if (fullscreenPaused()) fullscreenLog.push({ event: "return", at: Date.now() });
         fullscreenActive = true;
         fullscreenHeight = window.innerHeight;
         $("#fullscreenbutton").addClass("hide_elements").siblings("#" + NEXTBUTTON).removeClass("hide_elements");
@@ -233,6 +201,10 @@ function fullscreenResized() {
 }
 document.addEventListener("onfullscreenchange" in document ? "fullscreenchange" : "webkitfullscreenchange", fullscreenChanged);
 window.addEventListener("resize", fullscreenResized);
+document.addEventListener("visibilitychange", function() {
+    if (document.hidden) hiddenAt = Date.now();
+    else if (hiddenAt !== null) { hiddenMs += Date.now() - hiddenAt; hiddenAt = null; }
+});
 
 var Fullscreen = function(onDone) {
     if (!FULLSCREEN_PAGE || Q.get("skip") === "1") { onDone(); return; }
@@ -242,9 +214,7 @@ var Fullscreen = function(onDone) {
 };
 
 
-/********************
- * INSTRUCTIONS     *
- ********************/
+// instructions
 var InstructionRunner = function(onDone) {
     if (Q.get("skip") === "1") { onDone(); return; }
     var i = -1;   // -1 = the instructions.html splash
@@ -266,11 +236,8 @@ var InstructionRunner = function(onDone) {
 };
 
 
-/********************
- * QUIZ             *
- ********************/
-// Wrong answers send the participant back to the start of the instructions,
-// as in cloth-psiturk.
+//QUIZ
+// Wrong answers send the participant back to the start of the instructions
 var Quiz = function(onDone) {
     psiTurk.showPage(QUIZ_PAGE);
 
@@ -299,9 +266,7 @@ var Quiz = function(onDone) {
 };
 
 
-/********************
- * GRASP SCREEN     *
- ********************/
+// GRASP SCREEN
 // One object on stage.html. Calls onDone(row) after the maneuver has played. practice:
 // feedback after each try and as many tries as wanted.
 var GraspScreen = function(opts, onDone) {
@@ -357,14 +322,12 @@ var GraspScreen = function(opts, onDone) {
 };
 
 
-/********************
- * MATCH SCREEN     *
- ********************/
+// match screen
 // stage_match.html: the sample (blob_stim_ recording, flat floor) plays alone once, with no replay;
-// then match and foil (same uneven floor) appear as A / B. The answer and Replay unlock once both
-// have played UNLOCK_S seconds of simulation or ended, whichever is first; Replay restarts A and B
-// together (counted) and unlocks again on the same rule. practice: "Correct!" / "Wrong!" after each
-// choice, and Next stays off until the choice is right.
+// then match and foil (same uneven floor) appear as A / B. The answer is open as soon as A and B
+// start, and every click is logged; Next and Replay unlock once both have played to the end, and
+// Replay restarts A and B together (counted). practice: "Correct!" / "Wrong!" after each choice,
+// and Next stays off until the choice is right.
 function matchRuns(item) {
     var foil = TASK === "watch" ? "mts_" + item.cell.split("_")[0] + "_" + item.foil + "_" + item.floor + "_match"
                                 : "mts_" + item.cell + "_" + item.floor + "_" + item.foil;
@@ -381,7 +344,8 @@ var MatchScreen = function(item, progress, onDone, practice) {
     var pair = { A: runs[sides.A], B: runs[sides.B] };
     var view = item.camera ? { aim: item.camera.aim.join(","), az: item.camera.az, zoom: item.camera.zoom } : {};
     var onFloor = function(floor) { return item.camera ? $.extend({ floor: floor }, view) : view; };
-    var loaded = {}, unlocked = {}, tEnabled = null, replays = 0, firstChoice = null, exits0 = fullscreenExits;
+    var loaded = {}, played = {}, sampleAt = null, t0 = null, doneMs = null, log = [], replayLog = [], replays = 0,
+        firstChoice = null, exits0 = fullscreenExits, hidden0 = hiddenMs;
     if (item.camera) $("#frameS").removeClass("mts-target");
     var next = $("#" + NEXTBUTTON).prop("disabled", true);
     var replay = $("#replaybutton").prop("disabled", true);
@@ -389,35 +353,38 @@ var MatchScreen = function(item, progress, onDone, practice) {
 
     function count(o) { return Object.keys(o).length; }
     function playPair() {
-        unlocked = {};
+        played = {};
         replay.prop("disabled", true);
         $.each(pair, function(k) {
             document.getElementById("frame" + k).contentWindow.postMessage({ type: "play", paused: fullscreenPaused() }, "*");
         });
     }
-    replay.click(function() { replays += 1; playPair(); });
+    replay.click(function() { replays += 1; replayLog.push(Date.now() - t0); playPair(); });
+
+    function refreshNext() {
+        var c = $("input[name=mts]:checked").val();
+        next.prop("disabled", !(c && doneMs !== null && (!practice || sides[c] === "match")));
+    }
 
     function showPair() {
         $(".mts-sample").addClass("hide_elements");
         $(".mts-choices, #mts-answer, #replaybutton").removeClass("hide_elements");
         $("#" + TRIAL_INST).html("Loading&hellip;");
         $.each(pair, function(key, run) {
-            loadFrame(document.getElementById("frame" + key), viewerURL($.extend({ kind: "watch", run: run, unlock: UNLOCK_S }, onFloor(item.floor))), function(m) {
+            loadFrame(document.getElementById("frame" + key), viewerURL($.extend({ kind: "watch", run: run }, onFloor(item.floor))), function(m) {
                 if (m.type === "loaded") {
                     loaded[key] = true;
                     if (count(loaded) === 2) {
-                        $("#" + TRIAL_INST).html("Watch both objects&hellip;");
-                        playPair();
-                    }
-                } else if (m.type === "unlock") {
-                    unlocked[key] = true;
-                    if (count(unlocked) < 2) return;
-                    replay.prop("disabled", false);
-                    if (tEnabled === null) {
-                        tEnabled = Date.now();
+                        t0 = Date.now();
                         $("input[name=mts]").prop("disabled", false);
                         $("#" + TRIAL_INST).html("Which object, A or B, is made of the same material as the object you saw first?");
+                        playPair();
                     }
+                } else if (m.type === "played") {
+                    played[key] = true;
+                    if (count(played) < 2) return;
+                    replay.prop("disabled", false);
+                    if (doneMs === null) { doneMs = Date.now() - t0; refreshNext(); }
                 }
             });
         });
@@ -426,38 +393,45 @@ var MatchScreen = function(item, progress, onDone, practice) {
     loadFrame(document.getElementById("frameS"), viewerURL($.extend({ kind: "watch", run: runs.S }, onFloor("flat"))), function(m) {
         if (m.type === "loaded") {
             $("#" + TRIAL_INST).html("Watch the object&hellip;");
+            sampleAt = Date.now();
             document.getElementById("frameS").contentWindow.postMessage({ type: "play", paused: fullscreenPaused() }, "*");
         } else if (m.type === "played") {
             setTimeout(showPair, 500);
         }
     });
-    $("input[name=mts]").change(function() {
+    $("input[name=mts]").click(function() {
+        log.push({ choice: this.value, t_ms: Date.now() - t0 });
         if (firstChoice === null) firstChoice = this.value;
-        if (!practice) { next.prop("disabled", false); return; }
-        var right = sides[this.value] === "match";
-        next.prop("disabled", !right);
-        $("#" + TRIAL_INST).html(right ? "<span style='color:green;'>Correct!</span> Click Next to move on."
-                                       : "<span style='color:red;'>Wrong!</span> Choose again.");
+        if (practice) {
+            var right = sides[this.value] === "match";
+            $("#" + TRIAL_INST).html(right ? "<span style='color:green;'>Correct!</span> Click Next to move on."
+                                           : "<span style='color:red;'>Wrong!</span> Choose again.");
+        }
+        refreshNext();
     });
     next.click(function() {
         var choice = $("input[name=mts]:checked").val();
+        var k = log.length - 1;
+        while (k > 0 && log[k - 1].choice === choice) k -= 1;
+        var switches = log.filter(function(c, i) { return i > 0 && c.choice !== log[i - 1].choice; }).length;
         onDone({ choice: choice, chosen: sides[choice], correct: sides[choice] === "match", first_choice: firstChoice,
-                 rt_ms: Date.now() - tEnabled, replays: replays, floor: item.floor, foil: item.foil,
+                 choice_log: log, first_choice_ms: log[0].t_ms, final_choice_ms: log[k].t_ms, n_switches: switches,
+                 clips_done_ms: doneMs, next_ms: Date.now() - t0, sample_start_at: sampleAt, ab_start_at: t0,
+                 replays: replays, replay_log: replayLog, floor: item.floor, foil: item.foil,
                  match_side: item.match_side, run_A: pair.A, run_B: pair.B, run_sample: runs.S, camera: item.camera || null,
-                 fullscreen_exits: fullscreenExits - exits0 });
+                 fullscreen_exits: fullscreenExits - exits0, tab_hidden_ms: hiddenMs - hidden0 });
     });
 };
 
 
-/********************
- * EXPERIMENT       *
- ********************/
+// EXPERIMENT
+ 
 // grasp: triallist = run names. judge / watch: triallist = {cell, floor, foil, match_side}.
 var Experiment = function(triallist, onDone) {
     var cIdx = 0;
     var n = triallist.length;
 
-    function save() { psiTurk.saveData(); }     // incrementally: a session that dies at trial 3 keeps 1-2
+    function save() { psiTurk.saveData(); }
 
     function startTrial() {
         if (cIdx >= n) { onDone(); return; }
@@ -525,9 +499,7 @@ var Practice = function(items, onDone) {
 };
 
 
-/********************
- * DEBRIEF / END    *
- ********************/
+// DEBRIEF / END
 var PostQuestionnaire = function(onDone) {
     psiTurk.showPage("postquestionnaire.html");
     $("#next").click(function() {
@@ -538,24 +510,23 @@ var PostQuestionnaire = function(onDone) {
 };
 
 var Finish = function() {
-    // cloth-psiturk calls psiTurk.computeBonus here; this task pays a flat rate
-    // and records no per-trial 'hit' field, so there is nothing to compute.
     if (FULLSCREEN_PAGE) {
         psiTurk.recordUnstructuredData && psiTurk.recordUnstructuredData("fullscreen_exits", fullscreenExits);
         closeFullscreen();
     }
     psiTurk.saveData({
-        success: function() { psiTurk.completeHIT(); },
+        success: function(reply) {
+            if (reply && reply.code) window.location.href = "https://app.prolific.com/submissions/complete?cc=" + encodeURIComponent(reply.code);
+            else psiTurk.completeHIT();
+        },
         error:   function() { psiTurk.completeHIT(); },
     });
 };
 
 
-/********************
- * ENTRY            *
- ********************/
+// entry
 $(window).load(function() {
-    if (isMobileTablet()) {          // utils.js, as in cloth-psiturk
+    if (isMobileTablet()) {
         console.log("mobile browser detected");
         alert("Sorry, but mobile or tablet browsers are not supported. "
             + "Please switch to a desktop browser.");
