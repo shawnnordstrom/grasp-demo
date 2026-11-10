@@ -1,10 +1,9 @@
 /*
  * task.js, soft-object experiment: three tasks
  *
- *   grasp   pick up each of the 12 objects (3 shapes x slouch/soft/middle/hard), one try each
- *   judge   pick up each of 9 objects (soft/middle/hard), then match-to-sample: which of A / B is
- *           the same material
- *   watch   match-to-sample only, no grasping
+ * grasp pick up each of the 12 objects (3 shapes x slouch/soft/middle/hard), one try each
+ * judge pick up each of 9 objects (soft/middle/hard), then match-to-sample: which of A / B is the same material
+ * watch match-to-sample only, no grasping
  * 
 /* global $, psiTurk, condition, isMobileTablet */
 
@@ -345,7 +344,7 @@ var MatchScreen = function(item, progress, onDone, practice) {
     var view = item.camera ? { aim: item.camera.aim.join(","), az: item.camera.az, zoom: item.camera.zoom } : {};
     var onFloor = function(floor) { return item.camera ? $.extend({ floor: floor }, view) : view; };
     var loaded = {}, played = {}, sampleAt = null, t0 = null, doneMs = null, log = [], replayLog = [], replays = 0,
-        firstChoice = null, exits0 = fullscreenExits, hidden0 = hiddenMs;
+        firstChoice = null, exits0 = fullscreenExits, hidden0 = hiddenMs, retries = {}, loadError = null;
     if (item.camera) $("#frameS").removeClass("mts-target");
     var next = $("#" + NEXTBUTTON).prop("disabled", true);
     var replay = $("#replaybutton").prop("disabled", true);
@@ -363,7 +362,18 @@ var MatchScreen = function(item, progress, onDone, practice) {
 
     function refreshNext() {
         var c = $("input[name=mts]:checked").val();
-        next.prop("disabled", !(c && doneMs !== null && (!practice || sides[c] === "match")));
+        next.prop("disabled", !(loadError || (c && doneMs !== null && (!practice || sides[c] === "match"))));
+    }
+
+    function load(key, run, floor, fn) {
+        loadFrame(document.getElementById("frame" + key), viewerURL($.extend({ kind: "watch", run: run, attempt: retries[key] || 0 }, onFloor(floor))), function(m) {
+            if (m.type !== "error") { fn(m); return; }
+            retries[key] = (retries[key] || 0) + 1;
+            if (retries[key] <= 2) { setTimeout(function() { load(key, run, floor, fn); }, 1500); return; }
+            loadError = key + ": " + (m.error || "could not load");
+            $("#" + TRIAL_INST).html("This clip could not load. Press Next to continue.");
+            refreshNext();
+        });
     }
 
     function showPair() {
@@ -371,7 +381,7 @@ var MatchScreen = function(item, progress, onDone, practice) {
         $(".mts-choices, #mts-answer, #replaybutton").removeClass("hide_elements");
         $("#" + TRIAL_INST).html("Loading&hellip;");
         $.each(pair, function(key, run) {
-            loadFrame(document.getElementById("frame" + key), viewerURL($.extend({ kind: "watch", run: run }, onFloor(item.floor))), function(m) {
+            load(key, run, item.floor, function(m) {
                 if (m.type === "loaded") {
                     loaded[key] = true;
                     if (count(loaded) === 2) {
@@ -390,7 +400,7 @@ var MatchScreen = function(item, progress, onDone, practice) {
         });
     }
 
-    loadFrame(document.getElementById("frameS"), viewerURL($.extend({ kind: "watch", run: runs.S }, onFloor("flat"))), function(m) {
+    load("S", runs.S, "flat", function(m) {
         if (m.type === "loaded") {
             $("#" + TRIAL_INST).html("Watch the object&hellip;");
             sampleAt = Date.now();
@@ -410,6 +420,11 @@ var MatchScreen = function(item, progress, onDone, practice) {
         refreshNext();
     });
     next.click(function() {
+        if (loadError) {
+            onDone({ load_error: loadError, load_retries: retries, floor: item.floor, foil: item.foil, match_side: item.match_side,
+                     run_A: pair.A, run_B: pair.B, run_sample: runs.S, sample_start_at: sampleAt, ab_start_at: t0 });
+            return;
+        }
         var choice = $("input[name=mts]:checked").val();
         var k = log.length - 1;
         while (k > 0 && log[k - 1].choice === choice) k -= 1;
