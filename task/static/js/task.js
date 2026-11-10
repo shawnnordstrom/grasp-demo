@@ -414,7 +414,7 @@ var MatchScreen = function(item, progress, onDone, practice) {
         if (firstChoice === null) firstChoice = this.value;
         if (practice) {
             var right = sides[this.value] === "match";
-            $("#" + TRIAL_INST).html(right ? "<span style='color:green;'>Correct!</span> Click Next to move on."
+            $("#" + TRIAL_INST).html(right ? "<span style='color:green;'>Correct!</span> Click Next to move on once the videos finish."
                                            : "<span style='color:red;'>Wrong!</span> Choose again.");
         }
         refreshNext();
